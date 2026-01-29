@@ -46,6 +46,10 @@ def send_message(phone, text):
     }
     requests.post(url, json=payload, headers=headers)
 
+@app.route("/", methods=["GET"])
+def home():
+    return "ok", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
