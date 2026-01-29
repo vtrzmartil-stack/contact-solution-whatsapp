@@ -18,9 +18,10 @@ def verify():
     challenge = request.args.get("hub.challenge")
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200
+        return challenge, 200, {"Content-Type": "text/plain"}
 
     return "Unauthorized", 403
+
 
 @app.post("/webhook")
 def webhook():
