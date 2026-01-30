@@ -18,10 +18,9 @@ def verify():
     challenge = request.args.get("hub.challenge")
 
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200, {"Content-Type": "text/plain"}
+        return challenge, 200
 
-    return f"mode={mode} token={token} expected={VERIFY_TOKEN}", 403
-
+    return "", 403
 
 
 @app.post("/webhook")
