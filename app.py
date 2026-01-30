@@ -20,7 +20,8 @@ def verify():
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return challenge, 200, {"Content-Type": "text/plain"}
 
-    return "Unauthorized", 403
+    return f"mode={mode} token={token} expected={VERIFY_TOKEN}", 403
+
 
 
 @app.post("/webhook")
