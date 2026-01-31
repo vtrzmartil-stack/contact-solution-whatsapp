@@ -26,27 +26,28 @@ def verify():
 @app.post("/webhook")
 def webhook():
     data = request.get_json(silent=True) or {}
-    print("Payload recebido:", data)
+
+    phone = "desconhecido"
+    text = ""
 
     try:
- message = (
-    data.get("entry", [{}])[0]
-        .get("changes", [{}])[0]
-        .get("value", {})
-        .get("messages", [{}])[0]
-)
+        message = (
+            data.get("entry", [{}])[0]
+                .get("changes", [{}])[0]
+                .get("value", {})
+                .get("messages", [{}])[0]
+        )
 
-phone = message.get("from", "desconhecido")
+        phone = message.get("from", "desconhecido")
+        text = (
+            message.get("text", {})
+                   .get("body", "")
+                   .strip()
+                   .lower()
+        )
 
-text = (
-    message.get("text", {})
-           .get("body", "")
-           .strip()
-           .lower()
-)
-
-print("Telefone:", phone)
-print("Mensagem:", text)
+        print("Telefone:", phone)
+        print("Mensagem:", text)
 
         # LÓGICA DE ATENDIMENTO
         if "oi" in text or "olá" in text:
@@ -59,14 +60,14 @@ print("Mensagem:", text)
             )
 
         elif text == "1":
-            resposta = "Perfeito! 🛒 Vou te encaminhar para o setor de Vendas."
+            resposta = "Perfeito! 📦 Vou te encaminhar para Vendas."
 
         elif text == "2":
             resposta = "Certo! 🛠️ Vou te encaminhar para o Suporte."
 
         else:
             resposta = (
-                "Não entendi sua mensagem 😕\n"
+                "Não entendi sua mensagem 😅\n"
                 "Digite *oi* para começar o atendimento."
             )
 
