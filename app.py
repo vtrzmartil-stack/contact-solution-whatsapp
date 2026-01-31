@@ -36,8 +36,7 @@ def webhook():
                 ["messages"][0]
         )
 
-        phone = message["from"]
-        text = message["text"]["body"].lower()
+        text = message["text"]["body"].strip().lower()
 
         print("Telefone:", phone)
         print("Mensagem:", text)
