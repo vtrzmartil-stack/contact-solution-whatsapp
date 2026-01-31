@@ -29,17 +29,24 @@ def webhook():
     print("Payload recebido:", data)
 
     try:
-        message = (
-            data["entry"][0]
-                ["changes"][0]
-                ["value"]
-                ["messages"][0]
-        )
+ message = (
+    data.get("entry", [{}])[0]
+        .get("changes", [{}])[0]
+        .get("value", {})
+        .get("messages", [{}])[0]
+)
 
-        text = message["text"]["body"].strip().lower()
+phone = message.get("from", "desconhecido")
 
-        print("Telefone:", phone)
-        print("Mensagem:", text)
+text = (
+    message.get("text", {})
+           .get("body", "")
+           .strip()
+           .lower()
+)
+
+print("Telefone:", phone)
+print("Mensagem:", text)
 
         # LÓGICA DE ATENDIMENTO
         if "oi" in text or "olá" in text:
