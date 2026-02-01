@@ -3,6 +3,16 @@ import os
 import requests
 
 app = Flask(__name__)
+# ====== ESTADO EM MEMÓRIA (simples) ======
+SESSIONS = {}  # { "5511...": {"step": "MENU", "data": {...}} }
+
+def get_session(phone: str) -> dict:
+    if phone not in SESSIONS:
+        SESSIONS[phone] = {"step": "START", "data": {}}
+    return SESSIONS[phone]
+
+def reset_session(phone: str):
+    SESSIONS[phone] = {"step": "START", "data": {}}
 
 # =========================
 # CONFIG
