@@ -161,6 +161,9 @@ def webhook():
     print("Telefone:", phone)
     print("Mensagem:", text)
 
+    session = get_session(phone)
+    step = session["step"]
+
     reply = decide_reply(text)
     print("Resposta gerada:", reply)
 
