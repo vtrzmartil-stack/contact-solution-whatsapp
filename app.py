@@ -1,141 +1,70 @@
 from flask import Flask, request, jsonify
 import os
 import json
-import time
-import hashlib
+import base64
+import re
+import datetime
 import requests
 
-# Redis é opcional: se REDIS_URL existir, usa Redis; senão, usa memória (fallback)
-try:
-    import redis  # pip install redis
-except Exception:
-    redis = None
-
 app = Flask(__name__)
+
+# =========================
+# ESTADO EM MEMÓRIA (MVP)
+# =========================
+SESSIONS = {}  # { "5511...": {"step": "START", "data": {...}} }
+
+def get_session(phone: str) -> dict:
+    if phone not in SESSIONS:
+        SESSIONS[phone] = {"step": "START", "data": {}}
+    return SESSIONS[phone]
+
+def reset_session(phone: str):
+    SESSIONS[phone] = {"step": "START", "data": {}}
 
 # =========================
 # CONFIG
 # =========================
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "contact-solution-token")
 
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")          # Token do WhatsApp Cloud API
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")        # Phone Number ID do WhatsApp Cloud API
+# WhatsApp Cloud API (E2) — opcional, por enquanto pode ficar desligado
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
-REDIS_URL = os.getenv("REDIS_URL")                    # ex: redis://...
-SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))          # 1h
-IDEMPOTENCY_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "86400")) # 24h
-
-# =========================
-# REDIS / FALLBACK
-# =========================
-rdb = None
-if REDIS_URL and redis is not None:
-    try:
-        rdb = redis.from_url(REDIS_URL, decode_responses=True)
-        rdb.ping()
-        print("Redis: conectado ✅")
-    except Exception as e:
-        print("Redis: falhou, usando memória (fallback). Erro:", e)
-        rdb = None
-else:
-    if REDIS_URL and redis is None:
-        print("Redis: REDIS_URL existe mas 'redis' não instalado. Usando memória (fallback).")
-    else:
-        print("Redis: REDIS_URL não configurado. Usando memória (fallback).")
-
-# fallback em memória (não escala entre instâncias)
-MEM_SESSIONS = {}
-MEM_IDEMPOTENCY = set()
+# E1 (Google Sheets)
+GSHEET_ID = os.getenv("GSHEET_ID")  # id da planilha
+GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")  # service account json em base64 (recomendado)
 
 # =========================
-# HELPERS - SESSÃO (ESTADO)
+# ROTAS BÁSICAS
 # =========================
-def _session_key(phone: str) -> str:
-    return f"session:{phone}"
+@app.get("/")
+def home():
+    return "ok", 200
 
-def get_session(phone: str) -> dict:
-    """
-    Retorna a sessão do telefone:
-    {"step": "START" | "MENU" | "VENDAS" | "SUPORTE" | ..., "data": {...}}
-    """
-    if not phone:
-        phone = "desconhecido"
-
-    if rdb:
-        key = _session_key(phone)
-        raw = rdb.get(key)
-        if raw:
-            try:
-                return json.loads(raw)
-            except Exception:
-                # se corromper, reseta
-                session = {"step": "START", "data": {}}
-                rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
-                return session
-        else:
-            session = {"step": "START", "data": {}}
-            rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
-            return session
-
-    # fallback memória
-    if phone not in MEM_SESSIONS:
-        MEM_SESSIONS[phone] = {"step": "START", "data": {}}
-    return MEM_SESSIONS[phone]
-
-def save_session(phone: str, session: dict) -> None:
-    if not phone:
-        phone = "desconhecido"
-
-    if rdb:
-        key = _session_key(phone)
-        rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
-        return
-
-    MEM_SESSIONS[phone] = session
-
-def reset_session(phone: str) -> None:
-    session = {"step": "START", "data": {}}
-    save_session(phone, session)
+@app.get("/health")
+def health():
+    return jsonify(status="ok"), 200
 
 # =========================
-# HELPERS - IDEMPOTÊNCIA
+# WEBHOOK VERIFICAÇÃO (META)
 # =========================
-def _idempotency_key(message_id: str) -> str:
-    return f"idem:{message_id}"
+@app.get("/webhook")
+def verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
 
-def already_processed(message_id: str) -> bool:
-    """
-    True se já processamos esse message_id.
-    Implementação:
-      - Redis: SETNX com TTL
-      - Memória: set()
-    """
-    if not message_id:
-        return False
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return challenge, 200
 
-    if rdb:
-        key = _idempotency_key(message_id)
-        # setnx: só grava se não existe
-        was_set = rdb.set(key, "1", nx=True, ex=IDEMPOTENCY_TTL_SECONDS)
-        # was_set == True => primeira vez
-        return was_set is None  # se não setou, já existia => já processado
-
-    # fallback memória
-    if message_id in MEM_IDEMPOTENCY:
-        return True
-    MEM_IDEMPOTENCY.add(message_id)
-    return False
+    return "Forbidden", 403
 
 # =========================
-# EXTRAÇÃO DE MENSAGEM (WhatsApp Cloud payload)
+# HELPERS
 # =========================
 def extract_whatsapp_message(payload: dict):
     """
-    Retorna: (phone, text, message_id)
-
-    Observação:
-    - No WhatsApp Cloud API, normalmente existe msg["id"].
-    - Em testes manuais (Postman), pode não existir. Nesse caso criamos um hash.
+    Retorna (phone, text)
     """
     try:
         entry = (payload.get("entry") or [])[0]
@@ -143,170 +72,196 @@ def extract_whatsapp_message(payload: dict):
         value = changes.get("value") or {}
         messages = value.get("messages") or []
         if not messages:
-            return "desconhecido", "", ""
+            return "desconhecido", ""
 
         msg = messages[0]
         phone = msg.get("from") or "desconhecido"
 
-        # texto normal
         text_obj = msg.get("text") or {}
         text = text_obj.get("body") or ""
-
-        # id do WhatsApp (quando vem da Meta)
-        msg_id = msg.get("id") or ""
-
-        # fallback: se não veio msg_id (ex: Postman), gera um id determinístico
-        if not msg_id:
-            # tenta usar timestamp se vier
-            ts = msg.get("timestamp") or str(int(time.time()))
-            base = f"{phone}|{text}|{ts}"
-            msg_id = hashlib.sha256(base.encode("utf-8")).hexdigest()
-
         text = str(text).strip().lower()
-        return phone, text, msg_id
 
+        return phone, text
     except Exception as e:
         print("Erro ao extrair mensagem:", e)
-        return "desconhecido", "", ""
+        return "desconhecido", ""
+
+def normalize_cep(raw: str) -> str:
+    """
+    Aceita '12345-678' ou '12345678' e retorna '12345678'.
+    Se inválido, retorna ''.
+    """
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) != 8:
+        return ""
+    return digits
+
+def looks_like_email(s: str) -> bool:
+    # validação simples (MVP)
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", s.strip()))
 
 # =========================
-# LÓGICA DO FLUXO (ESTADOS)
+# E1: PERSISTÊNCIA (GOOGLE SHEETS)
+# =========================
+def save_lead_to_gsheet(lead: dict) -> bool:
+    """
+    Salva uma linha na planilha (Google Sheets).
+    Retorna True/False.
+    """
+    if not GSHEET_ID or not GOOGLE_SA_B64:
+        print("E1 desativado: GSHEET_ID ou GOOGLE_SERVICE_ACCOUNT_B64 não configurado.")
+        return False
+
+    try:
+        # lazy import (só carrega se usar)
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        sa_json = base64.b64decode(GOOGLE_SA_B64).decode("utf-8")
+        info = json.loads(sa_json)
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        gc = gspread.authorize(creds)
+
+        sh = gc.open_by_key(GSHEET_ID)
+        ws = sh.sheet1  # primeira aba
+
+        # cabeçalho esperado (se quiser, você pode criar manualmente na planilha)
+        row = [
+            lead.get("created_at", ""),
+            lead.get("phone", ""),
+            lead.get("setor", ""),
+            lead.get("nome", ""),
+            lead.get("email", ""),
+            lead.get("produto", ""),
+            lead.get("cep", ""),
+            lead.get("necessidade", ""),
+        ]
+
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return True
+
+    except Exception as e:
+        print("Erro ao salvar no Google Sheets:", e)
+        return False
+
+# =========================
+# DECISÃO DE RESPOSTA (COM ESTADOS)
 # =========================
 def decide_reply(step: str, text: str, data: dict):
     """
-    Retorna (reply_text, next_step, data_atualizado)
+    Retorna (reply_text, next_step)
     """
-    if data is None:
-        data = {}
-
     # comandos globais
-    if text in ("reiniciar", "reset", "menu"):
-        data = {}
-        return (
-            "Beleza! Vamos reiniciar.\nDigite *oi* para começar. 🙂",
-            "START",
-            data,
-        )
+    if text in {"reset", "reiniciar", "começar", "comecar"}:
+        data.clear()
+        return "Perfeito. Vamos recomeçar. Digite 'oi' para iniciar. ✅", "START"
 
+    # START: só avança com oi/olá
     if step == "START":
         if not text:
-            return ("Não recebi texto. Digite *oi* para começar. 🙂", "START", data)
-
+            return "Digite 'oi' para começar. 🙂", "START"
         if "oi" in text or "olá" in text or "ola" in text:
             return (
                 "Olá! 👋\n"
                 "Sou o atendimento automático 🤖\n\n"
                 "Digite:\n"
                 "1️⃣ para Vendas\n"
-                "2️⃣ para Suporte",
-                "MENU",
-                data,
-            )
+                "2️⃣ para Suporte"
+            ), "MENU"
+        return "Não entendi. Digite 'oi' para começar. 🙂", "START"
 
-        return ("Digite *oi* para começar o atendimento. 🙂", "START", data)
-
+    # MENU: escolhe setor
     if step == "MENU":
         if text == "1":
-            return (
-                "Perfeito! 👍 Vou te encaminhar para o setor de Vendas.\n"
-                "Antes, me diga seu *nome*:",
-                "LEAD_NOME",
-                data,
-            )
-
-        if text == "2":
-            return (
-                "Certo! 🛠️ Vou te encaminhar para o Suporte.\n"
-                "Antes, me diga seu *nome*:",
-                "LEAD_NOME",
-                data,
-            )
-
-        return ("Não entendi. Digite 1️⃣ para Vendas ou 2️⃣ para Suporte.", "MENU", data)
-
-    # Coleta de lead (simples e escalável)
-    if step == "LEAD_NOME":
-        if not text:
-            return ("Por favor, me diga seu *nome* 🙂", "LEAD_NOME", data)
-
-        data["nome"] = text.title()
-        return (
-            f"Obrigado, {data['nome']}! ✅\nAgora me diga seu *e-mail* (se não tiver, digite 'pular'):",
-            "LEAD_EMAIL",
-            data,
-        )
-
-    if step == "LEAD_EMAIL":
-        if not text:
-            return ("Me diga seu *e-mail* (ou 'pular'):", "LEAD_EMAIL", data)
-
-        if text != "pular":
-            data["email"] = text
-
-        return (
-            "Perfeito.\nAgora descreva em 1 frase o que você precisa (ex: 'quero orçamento', 'meu sistema caiu'):",
-            "LEAD_NEED",
-            data,
-        )
-
-    if step == "LEAD_NEED":
-        if not text:
-            return ("Me diga rapidamente o que você precisa 🙂", "LEAD_NEED", data)
-
-        data["necessidade"] = text
-
-        # Decide pra onde vai baseado na escolha anterior (guardamos quando veio do MENU)
-        # Como simplificação: se a pessoa caiu aqui, ela veio de MENU->LEAD_NOME, mas podemos inferir:
-        # Para manter simples, vamos perguntar se foi vendas ou suporte antes de finalizar.
-        return (
-            "Show! ✅\nSó pra confirmar:\n"
-            "1️⃣ Vendas\n"
-            "2️⃣ Suporte",
-            "CONFIRMA_SETOR",
-            data,
-        )
-
-    if step == "CONFIRMA_SETOR":
-        if text == "1":
             data["setor"] = "vendas"
-            return (
-                "Pronto! Registrei seus dados e vou encaminhar para *Vendas*.\n"
-                "Em breve alguém te chama por aqui. ✅",
-                "FINAL",
-                data,
-            )
+            return "Show! Antes de te encaminhar, me diga seu nome:", "LEAD_NAME"
         if text == "2":
             data["setor"] = "suporte"
-            return (
-                "Pronto! Registrei seus dados e vou encaminhar para *Suporte*.\n"
-                "Em breve alguém te chama por aqui. ✅",
-                "FINAL",
-                data,
-            )
-        return ("Digite 1️⃣ para Vendas ou 2️⃣ para Suporte.", "CONFIRMA_SETOR", data)
+            return "Certo! Antes de te encaminhar, me diga seu nome:", "LEAD_NAME"
+        return "Opção inválida. Digite 1️⃣ (Vendas) ou 2️⃣ (Suporte).", "MENU"
 
-    if step == "FINAL":
-        # Mantém a conversa “fechada” até o user pedir menu/reiniciar
-        return (
-            "Já registrei seu atendimento ✅\n"
-            "Se quiser começar de novo, digite *menu* ou *reiniciar*.",
-            "FINAL",
-            data,
+    # LEAD_NAME
+    if step == "LEAD_NAME":
+        if not text:
+            return "Qual seu nome? (pode ser só o primeiro) 🙂", "LEAD_NAME"
+        data["nome"] = text.title()
+        return "Obrigado! Agora me diga seu e-mail (se não tiver, digite 'pular'):", "LEAD_EMAIL"
+
+    # LEAD_EMAIL (opcional)
+    if step == "LEAD_EMAIL":
+        if text == "pular":
+            return "Perfeito. Qual produto você está procurando? (ex: 'iPhone 13', 'câmera', 'notebook')", "LEAD_PRODUCT"
+        if looks_like_email(text):
+            data["email"] = text
+            return "Perfeito. Qual produto você está procurando? (ex: 'iPhone 13', 'câmera', 'notebook')", "LEAD_PRODUCT"
+        return "E-mail inválido. Digite um e-mail válido ou 'pular'.", "LEAD_EMAIL"
+
+    # LEAD_PRODUCT
+    if step == "LEAD_PRODUCT":
+        if not text:
+            return "Qual produto você está procurando? 🙂", "LEAD_PRODUCT"
+        data["produto"] = text
+        return "Boa! Agora me diga seu CEP (somente números ou com hífen). Ex: 01001-000", "LEAD_CEP"
+
+    # LEAD_CEP
+    if step == "LEAD_CEP":
+        cep = normalize_cep(text)
+        if not cep:
+            return "CEP inválido. Envie no formato 01001-000 ou 01001000.", "LEAD_CEP"
+        data["cep"] = cep
+        return "Agora descreva em 1 frase o que você precisa (ex: 'quero orçamento', 'tirar dúvida', 'acompanhar pedido'):", "LEAD_NEED"
+
+    # LEAD_NEED
+    if step == "LEAD_NEED":
+        if not text:
+            return "Me diga em 1 frase o que você precisa 🙂", "LEAD_NEED"
+        data["necessidade"] = text
+
+        setor = data.get("setor", "vendas")
+        setor_label = "Vendas" if setor == "vendas" else "Suporte"
+
+        resumo = (
+            "✅ Só pra confirmar:\n"
+            f"• Nome: {data.get('nome','')}\n"
+            f"• Email: {data.get('email','(não informado)')}\n"
+            f"• Produto: {data.get('produto','')}\n"
+            f"• CEP: {data.get('cep','')}\n"
+            f"• Necessidade: {data.get('necessidade','')}\n"
+            f"• Setor: {setor_label}\n\n"
+            "Digite 1 para confirmar ✅\n"
+            "Digite 2 para recomeçar 🔄"
         )
+        return resumo, "CONFIRMA_SETOR"
 
-    # fallback geral
-    return ("Digite *oi* para começar 🙂", "START", {})
+    # CONFIRMA_SETOR
+    if step == "CONFIRMA_SETOR":
+        if text == "1":
+            return "Perfeito! Registrando seus dados… ✅", "FINAL"
+        if text == "2":
+            data.clear()
+            return "Beleza! Digite 'oi' para recomeçar. 🙂", "START"
+        return "Digite 1 para confirmar ou 2 para recomeçar.", "CONFIRMA_SETOR"
+
+    # FINAL
+    if step == "FINAL":
+        return "Pronto! Registrei seus dados e vou encaminhar. Em breve alguém te chama por aqui. ✅", "START"
+
+    # fallback
+    return "Não entendi. Digite 'oi' para começar. 🙂", "START"
 
 # =========================
-# ENVIO VIA WHATSAPP CLOUD API (quando integrar)
+# ENVIO WHATSAPP (E2) — opcional
 # =========================
 def send_whatsapp_message(to_phone: str, message_text: str) -> bool:
-    """
-    Envia mensagem via WhatsApp Cloud API.
-    Só funciona quando WHATSAPP_TOKEN e PHONE_NUMBER_ID estiverem configurados.
-    """
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("Envio desativado: WHATSAPP_TOKEN ou PHONE_NUMBER_ID ausente.")
+        print("Envio desativado (WHATSAPP_TOKEN/PHONE_NUMBER_ID ausentes).")
         return False
 
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
@@ -330,64 +285,50 @@ def send_whatsapp_message(to_phone: str, message_text: str) -> bool:
         return False
 
 # =========================
-# ROTAS BÁSICAS
-# =========================
-@app.get("/")
-def home():
-    return "ok", 200
-
-@app.get("/health")
-def health():
-    return jsonify(status="ok"), 200
-
-# =========================
-# WEBHOOK - VERIFICAÇÃO (META)
-# =========================
-@app.get("/webhook")
-def verify():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200
-
-    return "Forbidden", 403
-
-# =========================
-# WEBHOOK - RECEBIMENTO (POST)
+# WEBHOOK RECEBIMENTO (POST)
 # =========================
 @app.post("/webhook")
 def webhook():
     payload = request.get_json(silent=True) or {}
     print("Payload recebido:", payload)
 
-    phone, text, msg_id = extract_whatsapp_message(payload)
-
-    # E2: Idempotência
-    if msg_id and already_processed(msg_id):
-        print("Evento duplicado ignorado (idempotência). msg_id:", msg_id)
-        return jsonify(status="ok", duplicated=True), 200
+    phone, text = extract_whatsapp_message(payload)
 
     session = get_session(phone)
-    step = session.get("step", "START")
-    data = session.get("data", {}) or {}
+    step = session["step"]
+    data = session["data"]
 
-    reply, next_step, new_data = decide_reply(step, text, data)
+    reply, next_step = decide_reply(step, text, data)
 
-    # salva estado
+    # atualiza estado
     session["step"] = next_step
-    session["data"] = new_data
-    save_session(phone, session)
 
-    # logs
+    # logs úteis
     print("Telefone:", phone)
     print("Mensagem:", text)
     print("Step:", step, "->", next_step)
-    print("Dados:", new_data)
+    print("Dados:", data)
     print("Resposta gerada:", reply)
 
-    # envio real (deixe comentado até integrar)
+    # Se entrou no FINAL, salva lead
+    if next_step == "FINAL":
+        lead = {
+            "created_at": datetime.datetime.utcnow().isoformat(),
+            "phone": phone,
+            "setor": data.get("setor", ""),
+            "nome": data.get("nome", ""),
+            "email": data.get("email", ""),
+            "produto": data.get("produto", ""),
+            "cep": data.get("cep", ""),
+            "necessidade": data.get("necessidade", ""),
+        }
+        ok = save_lead_to_gsheet(lead)
+        print("Lead salvo no Sheets?", ok)
+
+        # depois de salvar, você pode resetar ou manter
+        reset_session(phone)
+
+    # (E2) Se quiser responder de verdade no WhatsApp, descomente:
     # send_whatsapp_message(phone, reply)
 
     return jsonify(status="ok"), 200
