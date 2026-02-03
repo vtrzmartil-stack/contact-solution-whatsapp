@@ -293,20 +293,28 @@ def webhook():
     payload = request.get_json(silent=True) or {}
     print("Payload recebido:", payload)
 
-    phone, text = extract_whatsapp_message(payload)
+   phone, text = extract_whatsapp_message(payload)
 
-    print("Telefone:", phone)
-    print("Mensagem:", text)
+   session = get_session(phone)
+   step = session["step"]
+data = session["data"]
 
-    session = get_session(phone)
-    reply = decide_reply(text, session)
-    print("Resposta gerada:", reply)
+reply, next_step = decide_reply(step, text, data)
 
-    # Envio real (quando integrar): ativar ENABLE_WHATSAPP_SEND=1
-    # send_whatsapp_message(phone, reply)
+# atualiza o estado
+session["step"] = next_step
 
-    # Responde 200 pra Meta/Postman
-    return jsonify(status="ok"), 200
+print("Telefone:", phone)
+print("Mensagem:", text)
+print("Step atual:", step, "-> Próximo:", next_step)
+print("Dados:", data)
+print("Resposta gerada:", reply)
+
+# envio real (deixe comentado por enquanto se ainda não integrou)
+# send_whatsapp_message(phone, reply)
+
+return jsonify(status="ok"), 200
+
 
 
 # =========================
