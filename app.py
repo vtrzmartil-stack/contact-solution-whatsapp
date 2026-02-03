@@ -1,7 +1,15 @@
 from flask import Flask, request, jsonify
 import os
-import requests
+import json
 import time
+import hashlib
+import requests
+
+# Redis é opcional: se REDIS_URL existir, usa Redis; senão, usa memória (fallback)
+try:
+    import redis  # pip install redis
+except Exception:
+    redis = None
 
 app = Flask(__name__)
 
@@ -10,132 +18,292 @@ app = Flask(__name__)
 # =========================
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "contact-solution-token")
 
-# (Opcional) Para enviar mensagem via WhatsApp Cloud API depois:
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")          # Token do WhatsApp Cloud API
+PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")        # Phone Number ID do WhatsApp Cloud API
+
+REDIS_URL = os.getenv("REDIS_URL")                    # ex: redis://...
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))          # 1h
+IDEMPOTENCY_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "86400")) # 24h
 
 # =========================
-# SESSIONS (memória)
-# Em produção/escala: trocar por Redis/DB
+# REDIS / FALLBACK
 # =========================
-SESSIONS = {}  # { "5511...": {"step": "START", "data": {...}, "updated_at": 123456 } }
+rdb = None
+if REDIS_URL and redis is not None:
+    try:
+        rdb = redis.from_url(REDIS_URL, decode_responses=True)
+        rdb.ping()
+        print("Redis: conectado ✅")
+    except Exception as e:
+        print("Redis: falhou, usando memória (fallback). Erro:", e)
+        rdb = None
+else:
+    if REDIS_URL and redis is None:
+        print("Redis: REDIS_URL existe mas 'redis' não instalado. Usando memória (fallback).")
+    else:
+        print("Redis: REDIS_URL não configurado. Usando memória (fallback).")
 
-SESSION_TTL_SECONDS = 60 * 60 * 6  # 6 horas (ajuste como quiser)
+# fallback em memória (não escala entre instâncias)
+MEM_SESSIONS = {}
+MEM_IDEMPOTENCY = set()
 
-
-def now_ts() -> int:
-    return int(time.time())
-
-
-def cleanup_sessions():
-    """Remove sessões antigas para não crescer infinito (simples)."""
-    if not SESSIONS:
-        return
-    limit = now_ts() - SESSION_TTL_SECONDS
-    to_delete = [k for k, v in SESSIONS.items() if v.get("updated_at", 0) < limit]
-    for k in to_delete:
-        del SESSIONS[k]
-
+# =========================
+# HELPERS - SESSÃO (ESTADO)
+# =========================
+def _session_key(phone: str) -> str:
+    return f"session:{phone}"
 
 def get_session(phone: str) -> dict:
-    cleanup_sessions()
+    """
+    Retorna a sessão do telefone:
+    {"step": "START" | "MENU" | "VENDAS" | "SUPORTE" | ..., "data": {...}}
+    """
     if not phone:
         phone = "desconhecido"
-    if phone not in SESSIONS:
-        SESSIONS[phone] = {"step": "START", "data": {}, "updated_at": now_ts()}
-    else:
-        SESSIONS[phone]["updated_at"] = now_ts()
-    return SESSIONS[phone]
 
+    if rdb:
+        key = _session_key(phone)
+        raw = rdb.get(key)
+        if raw:
+            try:
+                return json.loads(raw)
+            except Exception:
+                # se corromper, reseta
+                session = {"step": "START", "data": {}}
+                rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
+                return session
+        else:
+            session = {"step": "START", "data": {}}
+            rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
+            return session
 
-def reset_session(phone: str):
-    SESSIONS[phone] = {"step": "START", "data": {}, "updated_at": now_ts()}
+    # fallback memória
+    if phone not in MEM_SESSIONS:
+        MEM_SESSIONS[phone] = {"step": "START", "data": {}}
+    return MEM_SESSIONS[phone]
 
+def save_session(phone: str, session: dict) -> None:
+    if not phone:
+        phone = "desconhecido"
 
-# =========================
-# ROTAS BÁSICAS
-# =========================
-@app.get("/")
-def home():
-    return "ok", 200
+    if rdb:
+        key = _session_key(phone)
+        rdb.setex(key, SESSION_TTL_SECONDS, json.dumps(session, ensure_ascii=False))
+        return
 
+    MEM_SESSIONS[phone] = session
 
-@app.get("/health")
-def health():
-    return jsonify(status="ok"), 200
-
-
-# =========================
-# WEBHOOK - VERIFICAÇÃO (META)
-# =========================
-@app.get("/webhook")
-def verify():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200
-
-    return "Forbidden", 403
-
+def reset_session(phone: str) -> None:
+    session = {"step": "START", "data": {}}
+    save_session(phone, session)
 
 # =========================
-# HELPERS
+# HELPERS - IDEMPOTÊNCIA
 # =========================
-def normalize_text(t: str) -> str:
-    return str(t or "").strip().lower()
+def _idempotency_key(message_id: str) -> str:
+    return f"idem:{message_id}"
 
+def already_processed(message_id: str) -> bool:
+    """
+    True se já processamos esse message_id.
+    Implementação:
+      - Redis: SETNX com TTL
+      - Memória: set()
+    """
+    if not message_id:
+        return False
 
+    if rdb:
+        key = _idempotency_key(message_id)
+        # setnx: só grava se não existe
+        was_set = rdb.set(key, "1", nx=True, ex=IDEMPOTENCY_TTL_SECONDS)
+        # was_set == True => primeira vez
+        return was_set is None  # se não setou, já existia => já processado
+
+    # fallback memória
+    if message_id in MEM_IDEMPOTENCY:
+        return True
+    MEM_IDEMPOTENCY.add(message_id)
+    return False
+
+# =========================
+# EXTRAÇÃO DE MENSAGEM (WhatsApp Cloud payload)
+# =========================
 def extract_whatsapp_message(payload: dict):
     """
-    Extrai:
-      - phone (wa_id / from)
-      - text (mensagem)
-    Retorna: (phone, text)
+    Retorna: (phone, text, message_id)
 
-    Se não achar, retorna ("desconhecido", "")
+    Observação:
+    - No WhatsApp Cloud API, normalmente existe msg["id"].
+    - Em testes manuais (Postman), pode não existir. Nesse caso criamos um hash.
     """
     try:
-        entry = (payload.get("entry") or [{}])[0]
-        changes = (entry.get("changes") or [{}])[0]
+        entry = (payload.get("entry") or [])[0]
+        changes = (entry.get("changes") or [])[0]
         value = changes.get("value") or {}
-
         messages = value.get("messages") or []
         if not messages:
-            return "desconhecido", ""
+            return "desconhecido", "", ""
 
         msg = messages[0]
-
-        # Geralmente vem em msg["from"]
         phone = msg.get("from") or "desconhecido"
 
-        # Texto comum
+        # texto normal
         text_obj = msg.get("text") or {}
         text = text_obj.get("body") or ""
 
-        return phone, normalize_text(text)
+        # id do WhatsApp (quando vem da Meta)
+        msg_id = msg.get("id") or ""
+
+        # fallback: se não veio msg_id (ex: Postman), gera um id determinístico
+        if not msg_id:
+            # tenta usar timestamp se vier
+            ts = msg.get("timestamp") or str(int(time.time()))
+            base = f"{phone}|{text}|{ts}"
+            msg_id = hashlib.sha256(base.encode("utf-8")).hexdigest()
+
+        text = str(text).strip().lower()
+        return phone, text, msg_id
 
     except Exception as e:
         print("Erro ao extrair mensagem:", e)
-        return "desconhecido", ""
+        return "desconhecido", "", ""
 
+# =========================
+# LÓGICA DO FLUXO (ESTADOS)
+# =========================
+def decide_reply(step: str, text: str, data: dict):
+    """
+    Retorna (reply_text, next_step, data_atualizado)
+    """
+    if data is None:
+        data = {}
 
-def menu_text():
-    return (
-        "Olá! 👋\n"
-        "Sou o atendimento automático 🤖\n\n"
-        "Digite:\n"
-        "1️⃣ para Vendas\n"
-        "2️⃣ para Suporte\n\n"
-        "Digite *reiniciar* a qualquer momento para recomeçar."
-    )
+    # comandos globais
+    if text in ("reiniciar", "reset", "menu"):
+        data = {}
+        return (
+            "Beleza! Vamos reiniciar.\nDigite *oi* para começar. 🙂",
+            "START",
+            data,
+        )
 
+    if step == "START":
+        if not text:
+            return ("Não recebi texto. Digite *oi* para começar. 🙂", "START", data)
 
+        if "oi" in text or "olá" in text or "ola" in text:
+            return (
+                "Olá! 👋\n"
+                "Sou o atendimento automático 🤖\n\n"
+                "Digite:\n"
+                "1️⃣ para Vendas\n"
+                "2️⃣ para Suporte",
+                "MENU",
+                data,
+            )
+
+        return ("Digite *oi* para começar o atendimento. 🙂", "START", data)
+
+    if step == "MENU":
+        if text == "1":
+            return (
+                "Perfeito! 👍 Vou te encaminhar para o setor de Vendas.\n"
+                "Antes, me diga seu *nome*:",
+                "LEAD_NOME",
+                data,
+            )
+
+        if text == "2":
+            return (
+                "Certo! 🛠️ Vou te encaminhar para o Suporte.\n"
+                "Antes, me diga seu *nome*:",
+                "LEAD_NOME",
+                data,
+            )
+
+        return ("Não entendi. Digite 1️⃣ para Vendas ou 2️⃣ para Suporte.", "MENU", data)
+
+    # Coleta de lead (simples e escalável)
+    if step == "LEAD_NOME":
+        if not text:
+            return ("Por favor, me diga seu *nome* 🙂", "LEAD_NOME", data)
+
+        data["nome"] = text.title()
+        return (
+            f"Obrigado, {data['nome']}! ✅\nAgora me diga seu *e-mail* (se não tiver, digite 'pular'):",
+            "LEAD_EMAIL",
+            data,
+        )
+
+    if step == "LEAD_EMAIL":
+        if not text:
+            return ("Me diga seu *e-mail* (ou 'pular'):", "LEAD_EMAIL", data)
+
+        if text != "pular":
+            data["email"] = text
+
+        return (
+            "Perfeito.\nAgora descreva em 1 frase o que você precisa (ex: 'quero orçamento', 'meu sistema caiu'):",
+            "LEAD_NEED",
+            data,
+        )
+
+    if step == "LEAD_NEED":
+        if not text:
+            return ("Me diga rapidamente o que você precisa 🙂", "LEAD_NEED", data)
+
+        data["necessidade"] = text
+
+        # Decide pra onde vai baseado na escolha anterior (guardamos quando veio do MENU)
+        # Como simplificação: se a pessoa caiu aqui, ela veio de MENU->LEAD_NOME, mas podemos inferir:
+        # Para manter simples, vamos perguntar se foi vendas ou suporte antes de finalizar.
+        return (
+            "Show! ✅\nSó pra confirmar:\n"
+            "1️⃣ Vendas\n"
+            "2️⃣ Suporte",
+            "CONFIRMA_SETOR",
+            data,
+        )
+
+    if step == "CONFIRMA_SETOR":
+        if text == "1":
+            data["setor"] = "vendas"
+            return (
+                "Pronto! Registrei seus dados e vou encaminhar para *Vendas*.\n"
+                "Em breve alguém te chama por aqui. ✅",
+                "FINAL",
+                data,
+            )
+        if text == "2":
+            data["setor"] = "suporte"
+            return (
+                "Pronto! Registrei seus dados e vou encaminhar para *Suporte*.\n"
+                "Em breve alguém te chama por aqui. ✅",
+                "FINAL",
+                data,
+            )
+        return ("Digite 1️⃣ para Vendas ou 2️⃣ para Suporte.", "CONFIRMA_SETOR", data)
+
+    if step == "FINAL":
+        # Mantém a conversa “fechada” até o user pedir menu/reiniciar
+        return (
+            "Já registrei seu atendimento ✅\n"
+            "Se quiser começar de novo, digite *menu* ou *reiniciar*.",
+            "FINAL",
+            data,
+        )
+
+    # fallback geral
+    return ("Digite *oi* para começar 🙂", "START", {})
+
+# =========================
+# ENVIO VIA WHATSAPP CLOUD API (quando integrar)
+# =========================
 def send_whatsapp_message(to_phone: str, message_text: str) -> bool:
     """
     Envia mensagem via WhatsApp Cloud API.
-    Só use quando WHATSAPP_TOKEN e PHONE_NUMBER_ID estiverem configurados.
+    Só funciona quando WHATSAPP_TOKEN e PHONE_NUMBER_ID estiverem configurados.
     """
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         print("Envio desativado: WHATSAPP_TOKEN ou PHONE_NUMBER_ID ausente.")
@@ -161,168 +329,30 @@ def send_whatsapp_message(to_phone: str, message_text: str) -> bool:
         print("Erro ao enviar WhatsApp:", e)
         return False
 
+# =========================
+# ROTAS BÁSICAS
+# =========================
+@app.get("/")
+def home():
+    return "ok", 200
+
+@app.get("/health")
+def health():
+    return jsonify(status="ok"), 200
 
 # =========================
-# FLUXO COM ESTADOS + COLETA DE LEAD (Vendas e Suporte)
+# WEBHOOK - VERIFICAÇÃO (META)
 # =========================
-def decide_reply(step: str, text: str, data: dict):
-    """
-    Recebe:
-      - step: estado atual
-      - text: mensagem normalizada
-      - data: dicionário com dados do lead
+@app.get("/webhook")
+def verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
 
-    Retorna:
-      - reply: texto a responder
-      - next_step: próximo estado
-    """
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return challenge, 200
 
-    # Comandos globais
-    if text == "reiniciar":
-        data.clear()
-        return "✅ Reiniciado. " + menu_text(), "MENU"
-
-    if text == "0":
-        data.clear()
-        return "↩️ Voltando ao menu.\n\n" + menu_text(), "MENU"
-
-    # Se não tem texto (ex: payload sem messages.text.body)
-    if not text:
-        return "Não recebi texto. Digite *oi* para começar. 🙂", "START"
-
-    # START
-    if step == "START":
-        # aceita oi/ola/olá
-        if "oi" in text or "olá" in text or "ola" in text:
-            return menu_text(), "MENU"
-        return "Digite *oi* para começar. 🙂", "START"
-
-    # MENU
-    if step == "MENU":
-        if text == "1":
-            data["area"] = "vendas"
-            return "Perfeito! Vamos começar. Qual é o seu *nome*?", "VENDAS_NAME"
-        if text == "2":
-            data["area"] = "suporte"
-            return "Certo! Qual é o *produto/serviço* que você precisa de suporte?", "SUPORTE_PRODUCT"
-
-        # caso digite oi de novo
-        if "oi" in text or "olá" in text or "ola" in text:
-            return menu_text(), "MENU"
-
-        return "Não entendi. No menu, digite:\n1️⃣ Vendas\n2️⃣ Suporte\n\nOu 0 para voltar.", "MENU"
-
-    # ======================
-    # VENDAS (lead)
-    # ======================
-    if step == "VENDAS_NAME":
-        data["nome"] = text.title()
-        return "Show, {0}! Qual é o *nome da empresa* (ou diga 'pessoa física')?".format(data["nome"]), "VENDAS_COMPANY"
-
-    if step == "VENDAS_COMPANY":
-        data["empresa"] = text.title()
-        return "Legal. Em 1 frase: qual é a sua *necessidade/objetivo*? (ex: orçamento, consultoria, parceria)".strip(), "VENDAS_NEED"
-
-    if step == "VENDAS_NEED":
-        data["necessidade"] = text
-        return "Perfeito. Qual sua *cidade/UF*? (ex: São Paulo/SP)", "VENDAS_CITY"
-
-    if step == "VENDAS_CITY":
-        data["cidade_uf"] = text.title()
-        resumo = (
-            "✅ Confirma seus dados?\n\n"
-            f"Nome: {data.get('nome','')}\n"
-            f"Empresa: {data.get('empresa','')}\n"
-            f"Necessidade: {data.get('necessidade','')}\n"
-            f"Cidade/UF: {data.get('cidade_uf','')}\n\n"
-            "Digite:\n"
-            "1️⃣ Confirmar\n"
-            "2️⃣ Corrigir (recomeçar)\n"
-            "0️⃣ Menu"
-        )
-        return resumo, "VENDAS_CONFIRM"
-
-    if step == "VENDAS_CONFIRM":
-        if text == "1":
-            data["confirmado"] = True
-            return (
-                "✅ Perfeito! Já registrei seu lead.\n"
-                "Em breve alguém do time de Vendas vai te chamar aqui. 🙌\n\n"
-                "Se quiser voltar ao menu, digite 0."
-            ), "DONE"
-        if text == "2":
-            # recomeça vendas
-            area = data.get("area")
-            data.clear()
-            data["area"] = area or "vendas"
-            return "Sem problemas. Qual é o seu *nome*?", "VENDAS_NAME"
-        return "Digite 1 para confirmar, 2 para corrigir ou 0 para menu.", "VENDAS_CONFIRM"
-
-    # ======================
-    # SUPORTE (lead)
-    # ======================
-    if step == "SUPORTE_PRODUCT":
-        data["produto"] = text
-        return "Entendi. Descreva o *problema* (o que está acontecendo)?", "SUPORTE_PROBLEM"
-
-    if step == "SUPORTE_PROBLEM":
-        data["problema"] = text
-        return (
-            "Qual a *urgência*?\n"
-            "1️⃣ Baixa (posso aguardar)\n"
-            "2️⃣ Média\n"
-            "3️⃣ Alta (parado/impactando muito)\n\n"
-            "Ou responda com uma frase."
-        ), "SUPORTE_URGENCY"
-
-    if step == "SUPORTE_URGENCY":
-        urg_map = {"1": "baixa", "2": "média", "3": "alta"}
-        data["urgencia"] = urg_map.get(text, text)
-        return (
-            "Qual o melhor *contato* para retorno?\n"
-            "Pode ser e-mail ou telefone (ou diga 'este número')."
-        ), "SUPORTE_CONTACT"
-
-    if step == "SUPORTE_CONTACT":
-        data["contato_retorno"] = text
-        resumo = (
-            "✅ Confirma os dados do suporte?\n\n"
-            f"Produto/Serviço: {data.get('produto','')}\n"
-            f"Problema: {data.get('problema','')}\n"
-            f"Urgência: {data.get('urgencia','')}\n"
-            f"Contato: {data.get('contato_retorno','')}\n\n"
-            "Digite:\n"
-            "1️⃣ Confirmar\n"
-            "2️⃣ Corrigir (recomeçar)\n"
-            "0️⃣ Menu"
-        )
-        return resumo, "SUPORTE_CONFIRM"
-
-    if step == "SUPORTE_CONFIRM":
-        if text == "1":
-            data["confirmado"] = True
-            return (
-                "✅ Beleza! Já registrei seu chamado.\n"
-                "Em breve o Suporte vai te chamar por aqui. 🛠️\n\n"
-                "Se quiser voltar ao menu, digite 0."
-            ), "DONE"
-        if text == "2":
-            area = data.get("area")
-            data.clear()
-            data["area"] = area or "suporte"
-            return "Certo! Qual é o *produto/serviço* que você precisa de suporte?", "SUPORTE_PRODUCT"
-        return "Digite 1 para confirmar, 2 para corrigir ou 0 para menu.", "SUPORTE_CONFIRM"
-
-    # DONE
-    if step == "DONE":
-        # se a pessoa digitar algo depois de concluído
-        if "oi" in text or "olá" in text or "ola" in text:
-            return menu_text(), "MENU"
-        return "✅ Atendimento finalizado. Digite 0 para voltar ao menu ou *reiniciar* para recomeçar.", "DONE"
-
-    # fallback
-    return "Algo saiu do fluxo. Digite *reiniciar* para recomeçar.", "START"
-
+    return "Forbidden", 403
 
 # =========================
 # WEBHOOK - RECEBIMENTO (POST)
@@ -332,35 +362,38 @@ def webhook():
     payload = request.get_json(silent=True) or {}
     print("Payload recebido:", payload)
 
-    phone, text = extract_whatsapp_message(payload)
+    phone, text, msg_id = extract_whatsapp_message(payload)
+
+    # E2: Idempotência
+    if msg_id and already_processed(msg_id):
+        print("Evento duplicado ignorado (idempotência). msg_id:", msg_id)
+        return jsonify(status="ok", duplicated=True), 200
 
     session = get_session(phone)
-    step = session["step"]
-    data = session["data"]
+    step = session.get("step", "START")
+    data = session.get("data", {}) or {}
 
-    reply, next_step = decide_reply(step, text, data)
+    reply, next_step, new_data = decide_reply(step, text, data)
 
-    # atualiza estado
+    # salva estado
     session["step"] = next_step
-    session["data"] = data
-    session["updated_at"] = now_ts()
+    session["data"] = new_data
+    save_session(phone, session)
 
-    # logs úteis (Render)
+    # logs
     print("Telefone:", phone)
     print("Mensagem:", text)
-    print("Step atual:", step, "-> Próximo:", next_step)
-    print("Dados:", data)
+    print("Step:", step, "->", next_step)
+    print("Dados:", new_data)
     print("Resposta gerada:", reply)
 
-    # Por enquanto, não envia de verdade (só loga).
-    # Quando integrar, descomente:
+    # envio real (deixe comentado até integrar)
     # send_whatsapp_message(phone, reply)
 
     return jsonify(status="ok"), 200
 
-
 # =========================
-# START LOCAL (opcional)
+# START LOCAL
 # =========================
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
