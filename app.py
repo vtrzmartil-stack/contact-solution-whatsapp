@@ -120,46 +120,134 @@ def extract_whatsapp_message(payload: dict) -> tuple[str, str]:
 
     return "desconhecido", ""
 
-
-def decide_reply(text: str, session: dict) -> str:
+def decide_reply(step: str, text: str, data: dict) -> tuple[str, str]:
     """
-    Lógica do bot (MVP) usando step de sessão.
-    (Fácil de evoluir depois)
+    Retorna (resposta, proximo_step) baseado em:
+      - step atual da sessão
+      - text normalizado
+      - data (dicionário com dados do lead)
+    Steps usados:
+      START -> MENU -> LEAD_NAME -> LEAD_INTEREST -> FINAL
     """
-    if not text:
-        return "Não recebi texto. Digite *oi* para começar. 🙂"
 
-    step = session.get("step", "START")
+    # Normalização extra de segurança
+    text = (text or "").strip().lower()
 
-    # Você pode sofisticar o fluxo por step (menu, vendas, suporte...)
-    # Por enquanto, simples:
-
-    if "oi" in text or "olá" in text or "ola" in text:
-        session["step"] = "MENU"
+    # Comandos globais (funcionam em qualquer etapa)
+    if text in ("menu", "inicio", "início", "start"):
         return (
             "Olá! 👋\n"
             "Sou o atendimento automático 🤖\n\n"
             "Digite:\n"
             "1️⃣ para Vendas\n"
-            "2️⃣ para Suporte"
+            "2️⃣ para Suporte",
+            "MENU"
         )
 
+    if text in ("reset", "reiniciar", "recomeçar"):
+        return (
+            "Beleza! Reiniciei seu atendimento. 🙂\n\n"
+            "Digite:\n"
+            "1️⃣ para Vendas\n"
+            "2️⃣ para Suporte",
+            "MENU"
+        )
+
+    # =========================
+    # START
+    # =========================
+    if step == "START":
+        return (
+            "Olá! 👋\n"
+            "Sou o atendimento automático 🤖\n\n"
+            "Digite:\n"
+            "1️⃣ para Vendas\n"
+            "2️⃣ para Suporte",
+            "MENU"
+        )
+
+    # =========================
+    # MENU
+    # =========================
     if step == "MENU":
         if text == "1":
-            session["step"] = "VENDAS"
-            return "Perfeito! 👍 Vou te encaminhar para o setor de Vendas."
+            data["department"] = "vendas"
+            return (
+                "Perfeito! 👍 Antes de continuar, qual é o seu *nome*?",
+                "LEAD_NAME"
+            )
+
         if text == "2":
-            session["step"] = "SUPORTE"
-            return "Certo! 🛠️ Vou te encaminhar para o Suporte."
+            data["department"] = "suporte"
+            return (
+                "Certo! 🛠️ Me diga, em poucas palavras, qual é o problema ou dúvida?",
+                "LEAD_INTEREST"
+            )
 
-        return "Opção inválida. Digite 1 para Vendas ou 2 para Suporte."
+        return (
+            "Não entendi. 😅\n"
+            "Digite:\n"
+            "1️⃣ para Vendas\n"
+            "2️⃣ para Suporte",
+            "MENU"
+        )
 
-    # Se chegou aqui, não entendeu (ou usuário fora do fluxo)
+    # =========================
+    # LEAD_NAME (coletar nome)
+    # =========================
+    if step == "LEAD_NAME":
+        # validação simples
+        if len(text) < 2:
+            return ("Me diga seu nome (ex: João). 🙂", "LEAD_NAME")
+
+        # guarda nome "bonitinho"
+        name = text.strip().title()
+        data["name"] = name
+
+        return (
+            f"Prazer, {name}! 🙌\n"
+            "Agora me diga rapidamente: o que você procura / precisa?",
+            "LEAD_INTEREST"
+        )
+
+    # =========================
+    # LEAD_INTEREST (coletar interesse)
+    # =========================
+    if step == "LEAD_INTEREST":
+        if not text:
+            return ("Não recebi texto. Me diga em poucas palavras como posso ajudar. 🙂", "LEAD_INTEREST")
+
+        data["interest"] = text
+
+        dept = data.get("department", "atendimento")
+        name = data.get("name", "Tudo certo")
+
+        return (
+            f"{name}! ✅ Entendi.\n"
+            f"Área: *{dept}*\n"
+            f"Assunto: *{data['interest']}*\n\n"
+            "Perfeito — já vou encaminhar para o time responsável. 👨‍💻👩‍💻",
+            "FINAL"
+        )
+
+    # =========================
+    # FINAL
+    # =========================
+    if step == "FINAL":
+        return (
+            "Seu pedido já foi registrado ✅\n"
+            "Se quiser começar de novo, digite *menu*.",
+            "FINAL"
+        )
+
+    # fallback (se por algum motivo vier um step desconhecido)
     return (
-        "Não entendi sua mensagem 😅\n"
-        "Digite *oi* para começar o atendimento."
+        "Opa! Ajustei seu atendimento aqui. 🙂\n\n"
+        "Digite:\n"
+        "1️⃣ para Vendas\n"
+        "2️⃣ para Suporte",
+        "MENU"
     )
-
 
 def send_whatsapp_message(to_phone: str, message_text: str) -> bool:
     """
