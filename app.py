@@ -2,152 +2,167 @@ import os
 import json
 import base64
 from datetime import datetime
-
 from flask import Flask, request, jsonify
 
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
 
-# =========================
-# CONFIG (ENV VARS)
-# =========================
+# -----------------------------
+# Config (ENV)
+# -----------------------------
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "contact-solution-token")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")  # opcional
 
-# WhatsApp Cloud API (se você estiver usando)
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
+# Aceita os dois nomes pra evitar dor de cabeça
+SHEET_ID = os.getenv("SHEET_ID") or os.getenv("GSHEET_ID")
 
-# Google Sheets (E1)
-# Render está com GSHEET_ID -> perfeito. Mantemos fallback pra SHEET_ID só por segurança.
-GSHEET_ID = os.getenv("GSHEET_ID") or os.getenv("SHEET_ID")
-GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
+# Preferido: arquivo no Render Secret Files
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-# Aba e range (no seu print: Página1 com colunas A..H)
-SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Página1")
-READ_RANGE = f"{SHEET_TAB_NAME}!A1:H1"      # lê cabeçalho
-WRITE_RANGE = f"{SHEET_TAB_NAME}!A:H"       # append no final, 8 colunas
-
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# Fallback (se insistir): base64 do JSON
+GOOGLE_SERVICE_ACCOUNT_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
 
 
-# =========================
-# HELPERS
-# =========================
-def build_sheets_service_from_b64(b64_str: str):
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+]
+
+DEFAULT_READ_RANGE = os.getenv("SHEETS_READ_RANGE", "Página1!A1:H1")
+DEFAULT_WRITE_RANGE = os.getenv("SHEETS_WRITE_RANGE", "Página1!A:H")
+
+
+# -----------------------------
+# Google Sheets helpers
+# -----------------------------
+def _credentials_from_file(path: str):
+    creds = service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
+    return creds
+
+def _credentials_from_b64(b64_text: str):
     """
-    Recebe o JSON da service account em base64 (string),
-    decodifica e cria o client do Google Sheets.
+    Render às vezes quebra padding.
+    A gente corrige adicionando '=' até múltiplo de 4.
     """
-    if not b64_str:
-        raise ValueError("GOOGLE_SERVICE_ACCOUNT_B64 está vazio/ausente")
+    s = (b64_text or "").strip()
 
-    try:
-        raw = base64.b64decode(b64_str).decode("utf-8")
-        info = json.loads(raw)
-    except Exception as e:
-        raise ValueError(f"Falha ao decodificar GOOGLE_SERVICE_ACCOUNT_B64: {e}")
+    # remove aspas acidentais
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        s = s[1:-1].strip()
 
-    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    service = build("sheets", "v4", credentials=creds)
-    return service
+    # corrige padding
+    missing = (-len(s)) % 4
+    if missing:
+        s += "=" * missing
+
+    raw = base64.b64decode(s.encode("utf-8"))
+    info = json.loads(raw.decode("utf-8"))
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    return creds
+
+def get_sheets_service():
+    # 1) Preferido: arquivo
+    if GOOGLE_APPLICATION_CREDENTIALS:
+        return build("sheets", "v4", credentials=_credentials_from_file(GOOGLE_APPLICATION_CREDENTIALS))
+
+    # 2) Fallback: base64
+    if GOOGLE_SERVICE_ACCOUNT_B64:
+        return build("sheets", "v4", credentials=_credentials_from_b64(GOOGLE_SERVICE_ACCOUNT_B64))
+
+    raise RuntimeError(
+        "Credenciais ausentes: defina GOOGLE_APPLICATION_CREDENTIALS (recomendado) "
+        "ou GOOGLE_SERVICE_ACCOUNT_B64."
+    )
 
 
-def require_sheets_env():
-    """
-    Valida env vars críticas e retorna (service, sheet_id).
-    """
-    if not GSHEET_ID:
-        raise ValueError("GSHEET_ID (ou SHEET_ID) não configurado no Render")
-    if not GOOGLE_SA_B64:
-        raise ValueError("GOOGLE_SERVICE_ACCOUNT_B64 não configurado no Render")
-
-    service = build_sheets_service_from_b64(GOOGLE_SA_B64)
-    return service, GSHEET_ID
-
-
-# =========================
-# ROUTES
-# =========================
+# -----------------------------
+# Routes - Health
+# -----------------------------
 @app.get("/")
 def home():
-    return jsonify({"status": "ok", "message": "contact-solution-whatsapp up"})
+    return jsonify({"status": "ok", "message": "Contact Solution API is running"})
 
 
+# -----------------------------
+# Routes - Sheets test (READ)
+# -----------------------------
 @app.get("/test-sheets")
 def test_sheets_read():
-    """
-    Teste de leitura do cabeçalho (A1:H1).
-    Deve retornar ["created_at","phone","setor","nome","email","produto","cep","necessidade"]
-    """
     try:
-        service, sheet_id = require_sheets_env()
+        if not SHEET_ID:
+            return jsonify({"status": "error", "error": "SHEET_ID/GSHEET_ID ausente"}), 500
 
-        result = (
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=sheet_id, range=READ_RANGE)
-            .execute()
-        )
+        service = get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=DEFAULT_READ_RANGE
+        ).execute()
 
-        values = result.get("values", [])
-        return jsonify({"status": "ok", "range": READ_RANGE, "values": values})
+        return jsonify({"status": "ok", "values": result.get("values", [])})
 
     except Exception as e:
-        # log no Render
-        print("[/test-sheets] ERROR:", str(e))
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+# -----------------------------
+# Routes - Sheets test (WRITE)
+# -----------------------------
 @app.get("/test-sheets-write")
 def test_sheets_write():
-    """
-    Teste de escrita: adiciona uma linha no final da planilha.
-    """
     try:
-        service, sheet_id = require_sheets_env()
+        if not SHEET_ID:
+            return jsonify({"status": "error", "error": "SHEET_ID/GSHEET_ID ausente"}), 500
+
+        service = get_sheets_service()
 
         now = datetime.utcnow().isoformat()
-
         row = [
-            now,                 # created_at
-            "5511999999999",     # phone
-            "vendas",            # setor
-            "Teste",             # nome
-            "teste@email.com",   # email
-            "iphone 13",         # produto
-            "05068050",          # cep
-            "quero orçamento",   # necessidade
+            now,
+            "5511999999999",
+            "vendas",
+            "Teste",
+            "teste@email.com",
+            "iphone 13",
+            "05068050",
+            "quero orçamento",
         ]
 
-        body = {"values": [row]}
+        result = service.spreadsheets().values().append(
+            spreadsheetId=SHEET_ID,
+            range=DEFAULT_WRITE_RANGE,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [row]},
+        ).execute()
 
-        result = (
-            service.spreadsheets()
-            .values()
-            .append(
-                spreadsheetId=sheet_id,
-                range=WRITE_RANGE,
-                valueInputOption="USER_ENTERED",
-                insertDataOption="INSERT_ROWS",
-                body=body,
-            )
-            .execute()
-        )
-
-        return jsonify({"status": "ok", "updatedRange": result.get("updates", {}).get("updatedRange")})
+        return jsonify({"status": "ok", "updates": result.get("updates", {})})
 
     except Exception as e:
-        print("[/test-sheets-write] ERROR:", str(e))
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
-# =========================
-# MAIN (local)
-# =========================
+# -----------------------------
+# WhatsApp webhook (placeholder)
+# -----------------------------
+@app.get("/webhook")
+def webhook_verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return challenge, 200
+    return "Forbidden", 403
+
+
+@app.post("/webhook")
+def webhook_receive():
+    data = request.get_json(silent=True) or {}
+    # Aqui você mantém sua lógica real do WhatsApp.
+    # Este exemplo só responde OK.
+    return jsonify({"status": "ok"}), 200
+
+
 if __name__ == "__main__":
-    # Para rodar local:
-    # set GSHEET_ID=...
-    # set GOOGLE_SERVICE_ACCOUNT_B64=...
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
