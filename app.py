@@ -55,6 +55,45 @@ def test_google_sheets():
 def test_sheets_route():
     return test_google_sheets()
 
+from datetime import datetime
+
+@app.get("/test-sheets-write")
+def test_sheets_write_route():
+    # Monta uma linha fake só pra validar escrita
+    now = datetime.utcnow().isoformat()
+
+    row = [
+        now,
+        "5511999999999",          # phone
+        "vendas",                 # setor
+        "Teste",                  # nome
+        "teste@email.com",        # email
+        "iphone 13",              # produto
+        "05068050",               # cep
+        "quero orçamento"         # necessidade
+    ]
+
+    try:
+        if not GSHEET_ID or not GOOGLE_SA_B64:
+            return {"status": "error", "error": "SHEET_ID ou GOOGLE_SERVICE_ACCOUNT_B64 ausente"}
+
+        service = build_sheets_service_from_b64(GOOGLE_SA_B64)
+
+        # escreve no final da planilha (append)
+        result = service.spreadsheets().values().append(
+            spreadsheetId=GSHEET_ID,
+            range="Página1!A:H",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [row]},
+        ).execute()
+
+        return {"status": "ok", "updates": result.get("updates", {})}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 
 def reset_session(phone: str):
     SESSIONS[phone] = {"step": "START", "data": {}}
