@@ -32,7 +32,8 @@ def test_google_sheets():
         service = build("sheets", "v4", credentials=creds)
 
         sheet_id = os.environ["SHEET_ID"]
-        range_name = "Página1!A1"
+        range_name = "Página1!A1:H1"
+
 
         result = service.spreadsheets().values().get(
             spreadsheetId=sheet_id,
