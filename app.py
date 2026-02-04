@@ -108,7 +108,7 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 
 # E1 (Google Sheets)
-SHEET_ID = os.getenv("SHEET_ID")  # id da planilha
+GSHEET_ID = os.getenv("GSHEET_ID")  # id da planilha
 GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")  # service account json em base64 (recomendado)
 
 # =========================
