@@ -21,6 +21,34 @@ def get_session(phone: str) -> dict:
     if phone not in SESSIONS:
         SESSIONS[phone] = {"step": "START", "data": {}}
     return SESSIONS[phone]
+    
+def test_google_sheets():
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+
+        service = build("sheets", "v4", credentials=creds)
+
+        sheet_id = os.environ["SHEET_ID"]
+        range_name = "Página1!A1"
+
+        result = service.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range=range_name
+        ).execute()
+
+        return {
+            "status": "ok",
+            "values": result.get("values", [])
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 def reset_session(phone: str):
     SESSIONS[phone] = {"step": "START", "data": {}}
