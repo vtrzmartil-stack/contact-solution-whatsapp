@@ -50,6 +50,11 @@ def test_google_sheets():
             "error": str(e)
         }
 
+@app.get("/test-sheets")
+def test_sheets_route():
+    return test_google_sheets()
+
+
 def reset_session(phone: str):
     SESSIONS[phone] = {"step": "START", "data": {}}
 
