@@ -1,168 +1,203 @@
 import os
 import json
 import base64
-from datetime import datetime
-from flask import Flask, request, jsonify
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-app = Flask(__name__)
+# ---------------------------
+# Logging
+# ---------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("contact-solution")
 
-# -----------------------------
-# Config (ENV)
-# -----------------------------
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "contact-solution-token")
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")  # opcional
+# ---------------------------
+# Env (PADRÃO ÚNICO)
+# ---------------------------
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
+GSHEET_ID = os.getenv("GSHEET_ID", "")
+GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
 
-# Aceita os dois nomes pra evitar dor de cabeça
-SHEET_ID = os.getenv("SHEET_ID") or os.getenv("GSHEET_ID")
+# Nome da aba e range base (ajuste se sua aba tiver outro nome)
+SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Aba")
 
-# Preferido: arquivo no Render Secret Files
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+# 7 colunas: created_at, phone, setor, nome, email, produto, cep
+APPEND_RANGE = f"{SHEET_TAB_NAME}!A:G"
 
-# Fallback (se insistir): base64 do JSON
-GOOGLE_SERVICE_ACCOUNT_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64")
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-]
-
-DEFAULT_READ_RANGE = os.getenv("SHEETS_READ_RANGE", "Página1!A1:H1")
-DEFAULT_WRITE_RANGE = os.getenv("SHEETS_WRITE_RANGE", "Página1!A:H")
+app = FastAPI(title="Contact Solution WhatsApp Backend")
 
 
-# -----------------------------
-# Google Sheets helpers
-# -----------------------------
-def _credentials_from_file(path: str):
-    creds = service_account.Credentials.from_service_account_file(path, scopes=SCOPES)
-    return creds
-
-def _credentials_from_b64(b64_text: str):
-    """
-    Render às vezes quebra padding.
-    A gente corrige adicionando '=' até múltiplo de 4.
-    """
-    s = (b64_text or "").strip()
-
-    # remove aspas acidentais
-    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
-        s = s[1:-1].strip()
-
-    # corrige padding
-    missing = (-len(s)) % 4
+# ---------------------------
+# Helpers
+# ---------------------------
+def _normalize_b64(s: str) -> str:
+    """Remove quebras de linha e espaços; corrige padding (=)."""
+    s = (s or "").strip().replace("\n", "").replace("\r", "").replace(" ", "")
+    missing = len(s) % 4
     if missing:
-        s += "=" * missing
+        s += "=" * (4 - missing)
+    return s
 
-    raw = base64.b64decode(s.encode("utf-8"))
-    info = json.loads(raw.decode("utf-8"))
+
+def _get_sheets_service():
+    if not GSHEET_ID:
+        raise RuntimeError("GSHEET_ID ausente")
+    if not GOOGLE_SA_B64:
+        raise RuntimeError("GOOGLE_SERVICE_ACCOUNT_B64 ausente")
+
+    b64 = _normalize_b64(GOOGLE_SA_B64)
+
+    try:
+        raw = base64.b64decode(b64).decode("utf-8")
+    except Exception as e:
+        raise RuntimeError(f"Falha ao decodificar GOOGLE_SERVICE_ACCOUNT_B64: {e}")
+
+    try:
+        info = json.loads(raw)
+    except Exception as e:
+        raise RuntimeError(f"JSON inválido na credencial decodificada: {e}")
+
     creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    return creds
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
-def get_sheets_service():
-    # 1) Preferido: arquivo
-    if GOOGLE_APPLICATION_CREDENTIALS:
-        return build("sheets", "v4", credentials=_credentials_from_file(GOOGLE_APPLICATION_CREDENTIALS))
 
-    # 2) Fallback: base64
-    if GOOGLE_SERVICE_ACCOUNT_B64:
-        return build("sheets", "v4", credentials=_credentials_from_b64(GOOGLE_SERVICE_ACCOUNT_B64))
+def _extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Espera payload no formato WhatsApp Cloud API.
+    Retorna: {"from": "...", "text": "..."} ou None.
+    """
+    try:
+        entry = payload.get("entry", [])[0]
+        changes = entry.get("changes", [])[0]
+        value = changes.get("value", {})
+        messages = value.get("messages", [])
+        if not messages:
+            return None
+        msg = messages[0]
+        sender = msg.get("from", "")
+        text = (msg.get("text") or {}).get("body", "")
+        if not sender and not text:
+            return None
+        return {"from": sender, "text": text}
+    except Exception:
+        return None
 
-    raise RuntimeError(
-        "Credenciais ausentes: defina GOOGLE_APPLICATION_CREDENTIALS (recomendado) "
-        "ou GOOGLE_SERVICE_ACCOUNT_B64."
+
+def _append_row(row: List[Any]) -> Dict[str, Any]:
+    service = _get_sheets_service()
+    body = {"values": [row]}
+    result = (
+        service.spreadsheets()
+        .values()
+        .append(
+            spreadsheetId=GSHEET_ID,
+            range=APPEND_RANGE,
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body=body,
+        )
+        .execute()
     )
+    updates = result.get("updates", {})
+    return {
+        "status": "ok",
+        "updatedRange": updates.get("updatedRange"),
+        "updatedRows": updates.get("updatedRows"),
+    }
 
 
-# -----------------------------
-# Routes - Health
-# -----------------------------
-@app.get("/")
-def home():
-    return jsonify({"status": "ok", "message": "Contact Solution API is running"})
+# ---------------------------
+# Routes
+# ---------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 
-# -----------------------------
-# Routes - Sheets test (READ)
-# -----------------------------
 @app.get("/test-sheets")
 def test_sheets_read():
     try:
-        if not SHEET_ID:
-            return jsonify({"status": "error", "error": "SHEET_ID/GSHEET_ID ausente"}), 500
-
-        service = get_sheets_service()
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range=DEFAULT_READ_RANGE
-        ).execute()
-
-        return jsonify({"status": "ok", "values": result.get("values", [])})
-
+        service = _get_sheets_service()
+        result = (
+            service.spreadsheets()
+            .values()
+            .get(spreadsheetId=GSHEET_ID, range=APPEND_RANGE)
+            .execute()
+        )
+        values = result.get("values", [])
+        return {"status": "ok", "values": values[:10]}
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+        logger.exception("Erro no /test-sheets")
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
 
-# -----------------------------
-# Routes - Sheets test (WRITE)
-# -----------------------------
 @app.get("/test-sheets-write")
 def test_sheets_write():
+    """
+    Cria uma linha de teste com 7 colunas:
+    created_at, phone, setor, nome, email, produto, cep
+    """
     try:
-        if not SHEET_ID:
-            return jsonify({"status": "error", "error": "SHEET_ID/GSHEET_ID ausente"}), 500
-
-        service = get_sheets_service()
-
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         row = [
             now,
             "5511999999999",
-            "vendas",
-            "Teste",
+            "teste",
+            "Lead Teste",
             "teste@email.com",
-            "iphone 13",
-            "05068050",
-            "quero orçamento",
+            "produto X",
+            "00000-000",
         ]
-
-        result = service.spreadsheets().values().append(
-            spreadsheetId=SHEET_ID,
-            range=DEFAULT_WRITE_RANGE,
-            valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [row]},
-        ).execute()
-
-        return jsonify({"status": "ok", "updates": result.get("updates", {})})
-
+        return _append_row(row)
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+        logger.exception("Erro no /test-sheets-write")
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
 
-# -----------------------------
-# WhatsApp webhook (placeholder)
-# -----------------------------
-@app.get("/webhook")
-def webhook_verify():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
+# WhatsApp Webhook Verification (GET)
+@app.get("/webhook/verify")
+async def webhook_verify(request: Request):
+    qp = request.query_params
+    mode = qp.get("hub.mode")
+    token = qp.get("hub.verify_token")
+    challenge = qp.get("hub.challenge")
 
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return challenge, 200
-    return "Forbidden", 403
+    if mode == "subscribe" and token and token == VERIFY_TOKEN and challenge:
+        return PlainTextResponse(challenge)
+
+    return JSONResponse(status_code=403, content={"status": "error", "error": "Verification failed"})
 
 
+# WhatsApp Webhook Receive (POST)
 @app.post("/webhook")
-def webhook_receive():
-    data = request.get_json(silent=True) or {}
-    # Aqui você mantém sua lógica real do WhatsApp.
-    # Este exemplo só responde OK.
-    return jsonify({"status": "ok"}), 200
+async def webhook_receive(request: Request):
+    payload = await request.json()
+    msg = _extract_whatsapp_message(payload)
 
+    # WhatsApp também manda eventos sem "messages" (status, etc.)
+    if not msg:
+        return {"status": "ignored"}
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
+    phone = msg["from"]
+    text = msg["text"].strip().lower()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Exemplo simples (sem "necessidade"):
+    # - Se a pessoa mandar algo, você pode tratar como "produto" por enquanto
+    # - Os outros campos ficam vazios até você implementar o fluxo de perguntas
+    row = [now, phone, "", "", "", text, ""]
+
+    try:
+        result = _append_row(row)
+        return {"status": "ok", "saved": result}
+    except Exception as e:
+        logger.exception("Erro ao salvar lead do webhook")
+        return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
