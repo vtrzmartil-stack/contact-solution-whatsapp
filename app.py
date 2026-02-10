@@ -5,18 +5,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+
 # ---------------------------
 # Logging
 # ---------------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("contact-solution")
+
 
 # ---------------------------
 # Env (PADRÃO ÚNICO)
@@ -25,21 +26,22 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 
 GSHEET_ID = os.getenv("GSHEET_ID", "")
 GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
+
+# Nome da aba do Google Sheets (no seu print era "Página1")
 SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Página1")
+
+# 7 colunas: created_at, phone, setor, nome, email, produto, cep
 APPEND_RANGE = f"{SHEET_TAB_NAME}!A:G"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# WhatsApp Cloud API
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
-WHATSAPP_API_VERSION = os.getenv("WHATSAPP_API_VERSION", "v20.0")  # pode deixar assim
 
 app = FastAPI(title="Contact Solution WhatsApp Backend")
 
+
 # ---------------------------
-# Sessões (memória simples)
+# Sessões (memória simples em RAM)
+# Obs: Render free pode reiniciar; suficiente pra MVP/testes.
 # ---------------------------
-# OBS: Em Render free pode reiniciar; isso é suficiente pra MVP/testes.
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -47,6 +49,7 @@ SESSIONS: Dict[str, Dict[str, Any]] = {}
 # Helpers - Google Sheets
 # ---------------------------
 def _normalize_b64(s: str) -> str:
+    """Remove quebras de linha/espaços e corrige padding (=) do Base64."""
     s = (s or "").strip().replace("\n", "").replace("\r", "").replace(" ", "")
     missing = len(s) % 4
     if missing:
@@ -100,39 +103,14 @@ def _append_row(row: List[Any]) -> Dict[str, Any]:
 
 
 # ---------------------------
-# Helpers - WhatsApp
+# Helpers - WhatsApp payload (simulado/real)
 # ---------------------------
-def _send_whatsapp_text(to_phone: str, text: str) -> None:
-    """
-    Envia mensagem via WhatsApp Cloud API.
-    Requer WHATSAPP_TOKEN e WHATSAPP_PHONE_NUMBER_ID.
-    """
-    if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
-        logger.warning("WHATSAPP_TOKEN/WHATSAPP_PHONE_NUMBER_ID ausente. Não enviei resposta.")
-        return
-
-    url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to_phone,
-        "type": "text",
-        "text": {"body": text},
-    }
-
-    r = requests.post(url, headers=headers, json=payload, timeout=15)
-    if r.status_code >= 300:
-        logger.error(f"Falha ao enviar WhatsApp ({r.status_code}): {r.text}")
-    else:
-        logger.info(f"[WA] enviado para {to_phone}: {text}")
-
-
 def _extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """
-    Formato Cloud API.
+    Espera payload no formato WhatsApp Cloud API (ou simulado no Postman):
+    {
+      "entry":[{"changes":[{"value":{"messages":[{"from":"...","text":{"body":"..."}}]}}]}]
+    }
     """
     try:
         entry = payload.get("entry", [])[0]
@@ -146,18 +124,18 @@ def _extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str
         text = (msg.get("text") or {}).get("body", "")
         if not sender:
             return None
-        return {"from": sender, "text": text}
+        return {"from": sender, "text": text or ""}
     except Exception:
         return None
 
 
 def _is_valid_email(s: str) -> bool:
-    s = s.strip()
+    s = (s or "").strip()
     return "@" in s and "." in s and len(s) >= 6
 
 
 def _normalize_cep(s: str) -> str:
-    digits = "".join(ch for ch in s if ch.isdigit())
+    digits = "".join(ch for ch in (s or "") if ch.isdigit())
     if len(digits) == 8:
         return f"{digits[:5]}-{digits[5:]}"
     return ""
@@ -173,12 +151,13 @@ def _get_or_start_session(phone: str) -> Dict[str, Any]:
 
 
 # ---------------------------
-# Routes básicas
+# Rotas básicas
 # ---------------------------
 @app.get("/")
 def root():
     return {
         "status": "ok",
+        "service": "contact-solution-whatsapp",
         "endpoints": ["/health", "/test-sheets", "/test-sheets-write", "/webhook"],
     }
 
@@ -207,9 +186,21 @@ def test_sheets_read():
 
 @app.get("/test-sheets-write")
 def test_sheets_write():
+    """
+    Cria uma linha de teste com 7 colunas:
+    created_at, phone, setor, nome, email, produto, cep
+    """
     try:
         now = datetime.now(timezone.utc).isoformat()
-        row = [now, "5511999999999", "teste", "Lead Teste", "teste@email.com", "produto X", "00000-000"]
+        row = [
+            now,
+            "5511999999999",
+            "teste",
+            "Lead Teste",
+            "teste@email.com",
+            "produto X",
+            "00000-000",
+        ]
         return _append_row(row)
     except Exception as e:
         logger.exception("Erro no /test-sheets-write")
@@ -217,10 +208,14 @@ def test_sheets_write():
 
 
 # ---------------------------
-# Webhook WhatsApp (GET verify + POST receive)
+# Webhook WhatsApp (GET verify)
 # ---------------------------
 @app.get("/webhook")
 async def webhook_verify(request: Request):
+    """
+    Verificação da Meta (WhatsApp Cloud API):
+    GET /webhook?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...
+    """
     qp = request.query_params
     mode = qp.get("hub.mode")
     token = qp.get("hub.verify_token")
@@ -232,12 +227,15 @@ async def webhook_verify(request: Request):
     return JSONResponse(status_code=403, content={"status": "error", "error": "Verification failed"})
 
 
+# ---------------------------
+# Webhook WhatsApp (POST receive) - fluxo por etapas
+# ---------------------------
 @app.post("/webhook")
 async def webhook_receive(request: Request):
     payload = await request.json()
     msg = _extract_whatsapp_message(payload)
 
-    # Cloud API também manda eventos sem "messages"
+    # WhatsApp pode mandar eventos sem "messages" (status, etc.)
     if not msg:
         return {"status": "ignored"}
 
@@ -251,64 +249,62 @@ async def webhook_receive(request: Request):
 
     logger.info(f"[FLOW] phone={phone} step={step} text='{text}'")
 
-    # Se for primeira interação ou sessão recém-criada: manda olá e pergunta nome
-    if step == "nome" and not data["nome"] and text.lower() in {"oi", "olá", "ola", "bom dia", "boa tarde", "boa noite"}:
-        _send_whatsapp_text(phone, "Olá! 👋 Tudo bem? Qual é o seu nome?")
-        return {"status": "ok"}
+    greetings = {"oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "hello", "hi"}
+
+    # Mensagem inicial
+    if step == "nome" and not data["nome"] and text.lower() in greetings:
+        return {"status": "ok", "reply": "Olá! 👋 Tudo bem? Qual é o seu nome?"}
 
     # Etapa: NOME
     if step == "nome":
+        if not text:
+            return {"status": "ok", "reply": "Qual é o seu nome?"}
         data["nome"] = text
         session["step"] = "email"
-        _send_whatsapp_text(phone, f"Prazer, {data['nome']}! Qual é o seu e-mail?")
-        return {"status": "ok"}
+        return {"status": "ok", "reply": f"Prazer, {data['nome']}! Qual é o seu e-mail?"}
 
     # Etapa: EMAIL
     if step == "email":
         if not _is_valid_email(text):
-            _send_whatsapp_text(phone, "Esse e-mail parece inválido 😅 Pode enviar novamente?")
-            return {"status": "ok"}
+            return {"status": "ok", "reply": "Esse e-mail parece inválido 😅 Pode enviar novamente?"}
         data["email"] = text
         session["step"] = "produto"
-        _send_whatsapp_text(phone, "Perfeito! Qual produto você tem interesse?")
-        return {"status": "ok"}
+        return {"status": "ok", "reply": "Perfeito! Qual produto você tem interesse?"}
 
     # Etapa: PRODUTO
     if step == "produto":
+        if not text:
+            return {"status": "ok", "reply": "Qual produto você tem interesse?"}
         data["produto"] = text
         session["step"] = "cep"
-        _send_whatsapp_text(phone, "Boa! Agora me envie seu CEP (apenas números) pra eu preparar a oferta certinha.")
-        return {"status": "ok"}
+        return {"status": "ok", "reply": "Boa! Agora me envie seu CEP (apenas números) pra eu preparar a oferta certinha."}
 
     # Etapa: CEP + FINALIZA
     if step == "cep":
         cep = _normalize_cep(text)
         if not cep:
-            _send_whatsapp_text(phone, "CEP inválido. Envie apenas números (8 dígitos).")
-            return {"status": "ok"}
-
+            return {"status": "ok", "reply": "CEP inválido. Envie apenas números (8 dígitos)."}
         data["cep"] = cep
 
-        # Salva no Sheets (created_at, phone, setor, nome, email, produto, cep)
+        # Salvar no Sheets (7 colunas)
         row = [now, phone, data["setor"], data["nome"], data["email"], data["produto"], data["cep"]]
 
         try:
-            _append_row(row)
-            # encerra sessão
+            saved = _append_row(row)
             SESSIONS.pop(phone, None)
-
-            _send_whatsapp_text(
-                phone,
-                f"Fechado, {data['nome']} ✅\n"
-                f"Já registrei seu interesse em *{data['produto']}*.\n"
-                "Um vendedor vai te chamar em breve com uma oferta preparada pra você."
-            )
-            return {"status": "ok"}
+            return {
+                "status": "ok",
+                "saved": saved,
+                "reply": (
+                    f"Fechado, {data['nome']} ✅\n"
+                    f"Já registrei seu interesse em *{data['produto']}*.\n"
+                    "Um vendedor vai te chamar em breve com uma oferta preparada pra você."
+                ),
+            }
         except Exception as e:
             logger.exception("Erro ao salvar lead final")
             return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
-    # fallback (se algo sair do fluxo)
-    _send_whatsapp_text(phone, "Vamos recomeçar rapidinho 🙂 Qual é o seu nome?")
-    SESSIONS[phone] = {"step": "nome", "data": {"setor": "", "nome": "", "email": "", "produto": "", "cep": ""}}
-    return {"status": "ok"}
+    # fallback
+    SESSIONS.pop(phone, None)
+    return {"status": "ok", "reply": "Vamos recomeçar 🙂 Qual é o seu nome?"}
