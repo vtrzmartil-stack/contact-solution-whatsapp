@@ -21,15 +21,15 @@ logger = logging.getLogger("contact-solution")
 # Env (PADRÃO ÚNICO)
 # ---------------------------
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "")  # opcional (só p/ enviar msg)
 GSHEET_ID = os.getenv("GSHEET_ID", "")
 GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
 
-# Nome da aba e range base (ajuste se sua aba tiver outro nome)
+# Nome da aba (você está usando Página1)
 SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Página1")
 
 # 7 colunas: created_at, phone, setor, nome, email, produto, cep
 APPEND_RANGE = f"{SHEET_TAB_NAME}!A:G"
-
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 app = FastAPI(title="Contact Solution WhatsApp Backend")
@@ -69,28 +69,6 @@ def _get_sheets_service():
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
-def _extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
-    """
-    Espera payload no formato WhatsApp Cloud API.
-    Retorna: {"from": "...", "text": "..."} ou None.
-    """
-    try:
-        entry = payload.get("entry", [])[0]
-        changes = entry.get("changes", [])[0]
-        value = changes.get("value", {})
-        messages = value.get("messages", [])
-        if not messages:
-            return None
-        msg = messages[0]
-        sender = msg.get("from", "")
-        text = (msg.get("text") or {}).get("body", "")
-        if not sender and not text:
-            return None
-        return {"from": sender, "text": text}
-    except Exception:
-        return None
-
-
 def _append_row(row: List[Any]) -> Dict[str, Any]:
     service = _get_sheets_service()
     body = {"values": [row]}
@@ -114,9 +92,40 @@ def _append_row(row: List[Any]) -> Dict[str, Any]:
     }
 
 
+def _extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Espera payload no formato WhatsApp Cloud API.
+    Retorna: {"from": "...", "text": "..."} ou None.
+    """
+    try:
+        entry = payload.get("entry", [])[0]
+        changes = entry.get("changes", [])[0]
+        value = changes.get("value", {})
+        messages = value.get("messages", [])
+        if not messages:
+            return None
+        msg = messages[0]
+        sender = msg.get("from", "")
+        text = (msg.get("text") or {}).get("body", "")
+        if not sender and not text:
+            return None
+        return {"from": sender, "text": text}
+    except Exception:
+        return None
+
+
 # ---------------------------
 # Routes
 # ---------------------------
+@app.get("/")
+def root():
+    return {
+        "status": "ok",
+        "service": "contact-solution-whatsapp",
+        "endpoints": ["/health", "/test-sheets", "/test-sheets-write", "/webhook"],
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -162,8 +171,8 @@ def test_sheets_write():
         return JSONResponse(status_code=500, content={"status": "error", "error": str(e)})
 
 
-# WhatsApp Webhook Verification (GET)
-@app.get("/webhook/verify")
+# WhatsApp Webhook Verification (GET) + Receive (POST) no mesmo path (/webhook)
+@app.get("/webhook")
 async def webhook_verify(request: Request):
     qp = request.query_params
     mode = qp.get("hub.mode")
@@ -176,23 +185,21 @@ async def webhook_verify(request: Request):
     return JSONResponse(status_code=403, content={"status": "error", "error": "Verification failed"})
 
 
-# WhatsApp Webhook Receive (POST)
 @app.post("/webhook")
 async def webhook_receive(request: Request):
     payload = await request.json()
     msg = _extract_whatsapp_message(payload)
 
-    # WhatsApp também manda eventos sem "messages" (status, etc.)
+    # WhatsApp pode mandar eventos sem "messages" (status, etc.)
     if not msg:
         return {"status": "ignored"}
 
     phone = msg["from"]
-    text = msg["text"].strip().lower()
+    text = msg["text"].strip()
     now = datetime.now(timezone.utc).isoformat()
 
-    # Exemplo simples (sem "necessidade"):
-    # - Se a pessoa mandar algo, você pode tratar como "produto" por enquanto
-    # - Os outros campos ficam vazios até você implementar o fluxo de perguntas
+    # Por enquanto: produto = texto recebido
+    # Outros campos ficam vazios até a gente implementar o fluxo de perguntas
     row = [now, phone, "", "", "", text, ""]
 
     try:
