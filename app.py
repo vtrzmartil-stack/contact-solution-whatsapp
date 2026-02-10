@@ -25,7 +25,7 @@ GSHEET_ID = os.getenv("GSHEET_ID", "")
 GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
 
 # Nome da aba e range base (ajuste se sua aba tiver outro nome)
-SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Aba")
+SHEET_TAB_NAME = os.getenv("SHEET_TAB_NAME", "Página1")
 
 # 7 colunas: created_at, phone, setor, nome, email, produto, cep
 APPEND_RANGE = f"{SHEET_TAB_NAME}!A:G"
