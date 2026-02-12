@@ -30,21 +30,21 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 # DB
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Sheets
+# Sheets (fallback / opcional)
 DEFAULT_SHEET_ID = os.getenv("GSHEET_ID", "")
 DEFAULT_SHEET_TAB = os.getenv("SHEET_TAB_NAME", "Página1")
 GOOGLE_SA_B64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Admin token (opcional, recomendado)
+# Admin token (opcional, mas recomendado)
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
 app = FastAPI(title="Contact Solution (Multi-Company)")
 
 
 # ---------------------------
-# DB Helpers
+# DB helpers
 # ---------------------------
 def db_conn():
     if not DATABASE_URL:
@@ -52,101 +52,97 @@ def db_conn():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
-# ---------------------------
-# SQL - DDL + migrações seguras
-# ---------------------------
-DDL_BASE = """
-create table if not exists companies (
-  id text primary key,
-  name text not null,
-  sheet_id text,
-  sheet_tab text default 'Página1',
-  created_at timestamptz not null default now()
-);
-
-create table if not exists conversations (
-  id bigserial primary key,
-  company_id text not null references companies(id) on delete cascade,
-  phone text not null,
-
-  -- fluxo
-  step text not null default 'nome',
-  status text not null default 'open', -- open | completed
-
-  -- dados
-  setor text default '',
-  nome text default '',
-  email text default '',
-  produto text default '',
-
-  -- CEPs
-  cep_padrao text default '',     -- CEP padrão do cliente
-  cep_atual text default '',      -- CEP usado no orçamento atual (pode ser alternativo)
-
-  -- controle de retornos
-  quote_number integer not null default 0,
-  last_quote_at timestamptz,
-
-  -- export
-  exported_at timestamptz,
-
-  updated_at timestamptz not null default now(),
-  created_at timestamptz not null default now(),
-
-  unique(company_id, phone)
-);
-
-create table if not exists messages (
-  id bigserial primary key,
-  company_id text not null references companies(id) on delete cascade,
-  phone text not null,
-  direction text not null, -- 'in' | 'out'
-  text text not null,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists idx_messages_company_phone_created
-on messages(company_id, phone, created_at desc);
-"""
-
-MIGRATIONS = [
-    # Se você tinha coluna "cep" antiga, manter compatibilidade:
-    "alter table conversations add column if not exists cep text",
-    "alter table conversations add column if not exists cep_padrao text default ''",
-    "alter table conversations add column if not exists cep_atual text default ''",
-    "alter table conversations add column if not exists quote_number integer not null default 0",
-    "alter table conversations add column if not exists last_quote_at timestamptz",
-    "alter table conversations add column if not exists exported_at timestamptz",
-]
-
-
-def ensure_tables():
+def ensure_tables_and_migrate():
+    """
+    - Cria tabelas se não existirem
+    - Adiciona colunas caso seu DB já tenha uma versão antiga
+    """
     if not DATABASE_URL:
         logger.warning("DATABASE_URL ausente; pulando criação de tabelas.")
         return
+
+    ddl = """
+    create table if not exists companies (
+      id text primary key,
+      name text not null,
+      sheet_id text,
+      sheet_tab text default 'Página1',
+      created_at timestamptz not null default now()
+    );
+
+    create table if not exists conversations (
+      id bigserial primary key,
+      company_id text not null references companies(id) on delete cascade,
+      phone text not null,
+      step text not null default 'nome',
+      nome text default '',
+      email text default '',
+      cep_padrao text default '',
+      status text not null default 'open', -- open | completed
+      updated_at timestamptz not null default now(),
+      created_at timestamptz not null default now(),
+      unique(company_id, phone)
+    );
+
+    create table if not exists quotes (
+      id bigserial primary key,
+      company_id text not null references companies(id) on delete cascade,
+      phone text not null,
+      quote_number int not null,
+      produto text not null default '',
+      cep_usado text not null default '',
+      cep_alterado boolean not null default false,
+      salvou_cep_padrao boolean not null default false,
+      is_returning boolean not null default false,
+      status text not null default 'ok', -- ok | error
+      created_at timestamptz not null default now(),
+      unique(company_id, phone, quote_number)
+    );
+
+    create table if not exists messages (
+      id bigserial primary key,
+      company_id text not null references companies(id) on delete cascade,
+      phone text not null,
+      direction text not null, -- 'in' | 'out'
+      text text not null,
+      created_at timestamptz not null default now()
+    );
+
+    create index if not exists idx_messages_company_phone_created
+    on messages(company_id, phone, created_at desc);
+
+    create index if not exists idx_quotes_company_phone_created
+    on quotes(company_id, phone, created_at desc);
+    """
+
+    migrations = [
+        # caso já exista conversations antiga
+        "alter table conversations add column if not exists nome text default ''",
+        "alter table conversations add column if not exists email text default ''",
+        "alter table conversations add column if not exists cep_padrao text default ''",
+        "alter table conversations add column if not exists step text not null default 'nome'",
+        "alter table conversations add column if not exists status text not null default 'open'",
+    ]
+
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(DDL_BASE)
-                for q in MIGRATIONS:
-                    try:
-                        cur.execute(q)
-                    except Exception:
-                        # algumas versões/estados podem falhar em add column duplicado etc.
-                        pass
+                cur.execute(ddl)
+                for m in migrations:
+                    cur.execute(m)
             conn.commit()
-        logger.info("DB OK: tabelas garantidas + migrações aplicadas.")
+        logger.info("DB OK: tabelas garantidas + migração aplicada.")
     except Exception as e:
         logger.exception(f"Falha ao criar/verificar tabelas: {e}")
 
 
 @app.on_event("startup")
 def _startup():
-    ensure_tables()
+    ensure_tables_and_migrate()
 
 
 # ---------------------------
-# Sheets helpers
+# Helpers - Sheets
 # ---------------------------
 def _normalize_b64(s: str) -> str:
     s = (s or "").strip().replace("\n", "").replace("\r", "").replace(" ", "")
@@ -170,13 +166,11 @@ def _get_sheets_service():
 
 def append_to_sheets(sheet_id: str, sheet_tab: str, row: List[Any]) -> Dict[str, Any]:
     """
-    Sua planilha nova tem 13 colunas (A:M).
+    Exporta para A:M (13 colunas), de acordo com sua planilha nova.
     """
     if not sheet_id:
         raise RuntimeError("sheet_id ausente para export")
     sheet_tab = sheet_tab or "Página1"
-
-    # 13 colunas -> A:M
     rng = f"{sheet_tab}!A:M"
 
     service = _get_sheets_service()
@@ -194,37 +188,26 @@ def append_to_sheets(sheet_id: str, sheet_tab: str, row: List[Any]) -> Dict[str,
         .execute()
     )
     updates = result.get("updates", {})
-    return {
-        "updatedRange": updates.get("updatedRange"),
-        "updatedRows": updates.get("updatedRows"),
-        "spreadsheetId": sheet_id,
-        "sheetTab": sheet_tab,
-    }
+    return {"updatedRange": updates.get("updatedRange"), "updatedRows": updates.get("updatedRows")}
 
 
 # ---------------------------
-# Validations / parsing
+# Helpers - fluxo / validações
 # ---------------------------
 def _is_valid_email(s: str) -> bool:
     s = (s or "").strip()
     return "@" in s and "." in s and len(s) >= 6
 
 
+def _normalize_cep_digits_only(s: str) -> str:
+    return "".join(ch for ch in (s or "") if ch.isdigit())
+
+
 def _normalize_cep(s: str) -> str:
-    digits = "".join(ch for ch in (s or "") if ch.isdigit())
+    digits = _normalize_cep_digits_only(s)
     if len(digits) == 8:
         return f"{digits[:5]}-{digits[5:]}"
     return ""
-
-
-def _is_yes(s: str) -> bool:
-    s = (s or "").strip().lower()
-    return s in {"1", "sim", "s", "yes", "y"}
-
-
-def _is_no(s: str) -> bool:
-    s = (s or "").strip().lower()
-    return s in {"2", "nao", "não", "n", "no"}
 
 
 def extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
@@ -232,27 +215,28 @@ def extract_whatsapp_message(payload: Dict[str, Any]) -> Optional[Dict[str, str]
     Payload no formato WhatsApp Cloud API (ou simulado via Postman).
     """
     try:
-        entry = payload.get("entry", [])[0]
-        changes = entry.get("changes", [])[0]
-        value = changes.get("value", {})
-        messages = value.get("messages", [])
+        entry = (payload.get("entry") or [])[0]
+        changes = (entry.get("changes") or [])[0]
+        value = changes.get("value") or {}
+        messages = value.get("messages") or []
         if not messages:
             return None
-        msg = messages[0]
-        sender = msg.get("from", "")
-        text = (msg.get("text") or {}).get("body", "")
+        msg = messages[0] or {}
+        sender = (msg.get("from") or "").strip()
+        text = ((msg.get("text") or {}).get("body") or "").strip()
         if not sender:
             return None
-        return {"from": sender, "text": text or ""}
+        return {"from": sender, "text": text}
     except Exception:
         return None
 
 
 # ---------------------------
-# DB operations
+# DB - operações
 # ---------------------------
 def require_admin(request: Request):
     if not ADMIN_TOKEN:
+        # MVP: aberto se você não configurou.
         return
     token = request.headers.get("x-admin-token", "")
     if token != ADMIN_TOKEN:
@@ -288,12 +272,7 @@ def upsert_conversation(company_id: str, phone: str) -> Dict[str, Any]:
 
 
 def update_conversation(company_id: str, phone: str, **fields) -> Dict[str, Any]:
-    allowed = {
-        "step", "setor", "nome", "email", "produto", "status",
-        "cep_padrao", "cep_atual", "quote_number", "last_quote_at", "exported_at",
-        # compatibilidade
-        "cep",
-    }
+    allowed = {"step", "nome", "email", "cep_padrao", "status"}
     sets = []
     vals = []
     for k, v in fields.items():
@@ -327,110 +306,54 @@ def log_message(company_id: str, phone: str, direction: str, text: str) -> None:
             conn.commit()
 
 
-# ---------------------------
-# Export logic (LOCKED)
-# ---------------------------
-def build_sheets_row(
-    created_at_iso: str,
+def get_next_quote_number(company_id: str, phone: str) -> int:
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "select coalesce(max(quote_number), 0) as mx from quotes where company_id=%s and phone=%s",
+                (company_id, phone),
+            )
+            row = cur.fetchone()
+            mx = int((row or {}).get("mx") or 0)
+            return mx + 1
+
+
+def insert_quote(
     company_id: str,
     phone: str,
-    is_returning: bool,
     quote_number: int,
-    nome: str,
-    email: str,
     produto: str,
     cep_usado: str,
-    cep_padrao: str,
     cep_alterado: bool,
     salvou_cep_padrao: bool,
-    status: str,
-) -> List[Any]:
-    # A:M -> 13 colunas
-    return [
-        created_at_iso,                # A created_at
-        company_id,                    # B company_id
-        phone,                         # C phone
-        "1" if is_returning else "0",  # D is_returning
-        quote_number,                  # E quote_number
-        nome,                          # F nome
-        email,                         # G email
-        produto,                       # H produto
-        cep_usado,                     # I cep_usado
-        cep_padrao,                    # J cep_padrao
-        "1" if cep_alterado else "0",  # K cep_alterado
-        "1" if salvou_cep_padrao else "0",  # L salvou_cep_padrao
-        status,                        # M status
-    ]
-
-
-def try_export_and_finalize(
-    company: Dict[str, Any],
-    convo: Dict[str, Any],
-    *,
     is_returning: bool,
-    quote_number: int,
-    cep_usado: str,
-    cep_alterado: bool,
-    salvou_cep_padrao: bool,
+    status: str = "ok",
 ) -> Dict[str, Any]:
-    """
-    Regra: Só considera finalizado se:
-      - Sheets NÃO está configurado -> ok (finaliza)
-      - Sheets configurado -> append precisa dar sucesso
-    """
-    sheet_id = (company.get("sheet_id") or DEFAULT_SHEET_ID or "").strip()
-    sheet_tab = (company.get("sheet_tab") or DEFAULT_SHEET_TAB or "Página1").strip()
-
-    created_at_iso = datetime.now(timezone.utc).isoformat()
-    row = build_sheets_row(
-        created_at_iso=created_at_iso,
-        company_id=company["id"],
-        phone=convo["phone"],
-        is_returning=is_returning,
-        quote_number=quote_number,
-        nome=convo.get("nome") or "",
-        email=convo.get("email") or "",
-        produto=convo.get("produto") or "",
-        cep_usado=cep_usado,
-        cep_padrao=convo.get("cep_padrao") or "",
-        cep_alterado=cep_alterado,
-        salvou_cep_padrao=salvou_cep_padrao,
-        status="ok",
-    )
-
-    # Se não tem config de Sheets, não trava o fluxo
-    if not sheet_id or not GOOGLE_SA_B64:
-        update_conversation(
-            company["id"], convo["phone"],
-            status="completed",
-            exported_at=datetime.now(timezone.utc),
-            last_quote_at=datetime.now(timezone.utc),
-            step="produto",  # deixa pronto pro próximo orçamento
-        )
-        return {"exported": False, "reason": "sheets_not_configured"}
-
-    # Sheets configurado -> precisa sucesso
-    try:
-        export_info = append_to_sheets(sheet_id, sheet_tab, row)
-
-        # sucesso -> FINALIZA
-        update_conversation(
-            company["id"], convo["phone"],
-            status="completed",
-            exported_at=datetime.now(timezone.utc),
-            last_quote_at=datetime.now(timezone.utc),
-            step="produto",
-        )
-        return {"exported": True, "info": export_info}
-    except Exception as e:
-        logger.error(f"Falha no export pro Sheets (TRAVADO): {e}")
-        # trava para retry (não finaliza)
-        update_conversation(
-            company["id"], convo["phone"],
-            step="export_retry",
-            status="open",
-        )
-        return {"exported": False, "reason": str(e)}
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into quotes
+                  (company_id, phone, quote_number, produto, cep_usado, cep_alterado, salvou_cep_padrao, is_returning, status)
+                values
+                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                returning *
+                """,
+                (
+                    company_id,
+                    phone,
+                    quote_number,
+                    produto or "",
+                    cep_usado or "",
+                    bool(cep_alterado),
+                    bool(salvou_cep_padrao),
+                    bool(is_returning),
+                    status,
+                ),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row
 
 
 # ---------------------------
@@ -446,6 +369,7 @@ def root():
             "/webhook/{company_id}",
             "/admin/companies",
             "/admin/leads/{company_id}",
+            "/admin/quotes/{company_id}",
         ],
     }
 
@@ -456,7 +380,7 @@ def health():
 
 
 # ---------------------------
-# Admin
+# Admin (MVP)
 # ---------------------------
 @app.post("/admin/companies")
 async def admin_create_company(request: Request):
@@ -503,13 +427,16 @@ def admin_list_companies(request: Request):
 
 @app.get("/admin/leads/{company_id}")
 def admin_list_leads(company_id: str, request: Request):
+    """
+    Lista perfis (conversations) já completados.
+    """
     require_admin(request)
     with db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 select * from conversations
-                where company_id = %s
+                where company_id = %s and status = 'completed'
                 order by updated_at desc
                 limit 200
                 """,
@@ -519,8 +446,29 @@ def admin_list_leads(company_id: str, request: Request):
     return {"status": "ok", "leads": rows}
 
 
+@app.get("/admin/quotes/{company_id}")
+def admin_list_quotes(company_id: str, request: Request):
+    """
+    Lista orçamentos (quotes) exportáveis/registrados.
+    """
+    require_admin(request)
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                select * from quotes
+                where company_id = %s
+                order by created_at desc
+                limit 500
+                """,
+                (company_id,),
+            )
+            rows = cur.fetchall()
+    return {"status": "ok", "quotes": rows}
+
+
 # ---------------------------
-# Webhook Verify (Meta)
+# Webhook Verify (Meta) - opcional para futuro WhatsApp Cloud
 # ---------------------------
 @app.get("/webhook")
 async def webhook_verify(request: Request):
@@ -536,34 +484,26 @@ async def webhook_verify(request: Request):
 
 
 # ---------------------------
-# Webhook Multiempresa (POST)
+# Webhook Multiempresa (POST) - fluxo por etapas (resposta via JSON)
 # ---------------------------
 @app.post("/webhook/{company_id}")
 async def webhook_receive(company_id: str, request: Request):
-    try:
-        payload = await request.json()
-    except Exception:
-        return JSONResponse(status_code=400, content={"status": "error", "error": "JSON inválido"})
-
+    payload = await request.json()
     msg = extract_whatsapp_message(payload)
+
     if not msg:
         return {"status": "ignored"}
 
     phone = msg["from"]
     text = (msg["text"] or "").strip()
-    text_l = text.lower()
+    now_iso = datetime.now(timezone.utc).isoformat()
 
-    # garante empresa
+    # garante que empresa existe
     company = get_company(company_id)
 
-    # garante conversa
+    # garante conversa no DB
     convo = upsert_conversation(company_id, phone)
-
-    # compat: se tinha "cep" antigo e cep_padrao vazio, tenta aproveitar
-    if not convo.get("cep_padrao") and convo.get("cep"):
-        convo = update_conversation(company_id, phone, cep_padrao=convo.get("cep") or "")
-
-    step = convo["step"]
+    step = (convo.get("step") or "nome").strip()
 
     greetings = {"oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "hello", "hi"}
 
@@ -571,84 +511,43 @@ async def webhook_receive(company_id: str, request: Request):
     log_message(company_id, phone, "in", text)
 
     # ---------------------------
-    # Retry export (se falhou antes)
+    # Helpers de estado "in-memory" por request (sem quebrar o DB)
+    # - produto/cep temporários em steps intermediários ficam no texto do usuário
+    # - a persistência final é em QUOTES
     # ---------------------------
-    if step == "export_retry":
-        # tenta exportar novamente com o que já temos
-        is_returning = True if convo.get("quote_number", 0) > 0 else False
-        quote_number = int(convo.get("quote_number") or 0)
 
-        cep_usado = convo.get("cep_atual") or convo.get("cep_padrao") or ""
-        if not cep_usado:
-            # sem CEP, volta pro CEP
-            convo = update_conversation(company_id, phone, step="cep")
-            reply = "Só falta seu CEP (8 dígitos) para eu concluir o registro. Pode me enviar?"
+    # Se lead já é "completed" e mandar qualquer coisa que pareça novo contato, tratamos como retorno:
+    is_completed = (convo.get("status") == "completed")
+    has_profile = bool((convo.get("nome") or "").strip()) and bool((convo.get("email") or "").strip())
+    cep_padrao = (convo.get("cep_padrao") or "").strip()
+
+    # Atalho: se está completed e receber saudação ou mensagem curta, reinicia no modo retorno:
+    if is_completed and step not in {"produto", "cep_confirm", "cep", "cep_save"}:
+        # entra no fluxo de orçamento direto
+        convo = update_conversation(company_id, phone, step="produto", status="open")
+        step = "produto"
+
+    # ---------------------------
+    # Step: NOME (novo lead)
+    # ---------------------------
+    if step == "nome":
+        if text.lower() in greetings:
+            reply = "Olá! 👋 Tudo bem? Qual é o seu nome?"
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        export_result = try_export_and_finalize(
-            company, convo,
-            is_returning=is_returning,
-            quote_number=quote_number,
-            cep_usado=cep_usado,
-            cep_alterado=(cep_usado != (convo.get("cep_padrao") or "")),
-            salvou_cep_padrao=False,
-        )
-
-        if export_result.get("exported"):
-            reply = (
-                f"Perfeito, {convo.get('nome','')} ✅\n"
-                f"Registro confirmado! Seu interesse em *{convo.get('produto','')}* foi anotado.\n"
-                "Um vendedor vai te chamar em breve com uma oferta preparada pra você."
-            )
-            log_message(company_id, phone, "out", reply)
-            return {"status": "ok", "reply": reply, "export": export_result}
-        else:
-            reply = "Ainda estou com dificuldade para registrar no sistema. Tente novamente em instantes 🙏"
-            log_message(company_id, phone, "out", reply)
-            return {"status": "ok", "reply": reply, "export": export_result}
-
-    # ---------------------------
-    # Lead retornando (já tem dados)
-    # ---------------------------
-    has_profile = bool(convo.get("nome")) and bool(convo.get("email")) and bool(convo.get("cep_padrao"))
-    is_returning_now = has_profile and (convo.get("quote_number", 0) > 0 or convo.get("status") == "completed")
-
-    # Se o lead voltou e mandou saudação, não recolhe dados:
-    if is_returning_now and text_l in greetings:
-        # novo orçamento começa pedindo produto
-        convo = update_conversation(company_id, phone, step="produto", status="open", produto="", cep_atual="")
-        reply = (
-            f"Oi, {convo.get('nome')}! 👋\n"
-            "Quer fazer um novo orçamento? Me diga qual produto/serviço você tem interesse."
-        )
-        log_message(company_id, phone, "out", reply)
-        return {"status": "ok", "reply": reply}
-
-    # ---------------------------
-    # Novo lead - saudação
-    # ---------------------------
-    if step == "nome" and not convo.get("nome") and text_l in greetings:
-        reply = "Olá! 👋 Tudo bem? Qual é o seu nome?"
-        log_message(company_id, phone, "out", reply)
-        return {"status": "ok", "reply": reply}
-
-    # ---------------------------
-    # Step: NOME
-    # ---------------------------
-    if step == "nome":
         if not text:
             reply = "Qual é o seu nome?"
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
         convo = update_conversation(company_id, phone, nome=text, step="email", status="open")
-        reply = f"Prazer, {convo['nome']}! Qual é o seu e-mail?"
+        reply = f"Prazer, {convo.get('nome','')}! Qual é o seu e-mail?"
         log_message(company_id, phone, "out", reply)
         return {"status": "ok", "reply": reply}
 
     # ---------------------------
-    # Step: EMAIL
+    # Step: EMAIL (novo lead)
     # ---------------------------
     if step == "email":
         if not _is_valid_email(text):
@@ -657,183 +556,265 @@ async def webhook_receive(company_id: str, request: Request):
             return {"status": "ok", "reply": reply}
 
         convo = update_conversation(company_id, phone, email=text, step="produto", status="open")
-        reply = "Perfeito! Qual produto/serviço você tem interesse?"
+        reply = "Perfeito! Qual serviço/produto você tem interesse?"
         log_message(company_id, phone, "out", reply)
         return {"status": "ok", "reply": reply}
 
     # ---------------------------
-    # Step: PRODUTO
+    # Step: PRODUTO (novo ou retornando)
     # ---------------------------
     if step == "produto":
-        if not text:
-            reply = "Qual produto/serviço você tem interesse?"
+        if not text or text.lower() in greetings:
+            # se é retorno e ele só deu oi, pergunta direto o produto
+            if is_completed and has_profile:
+                reply = f"Olá, {convo.get('nome','')}! 😄 Qual serviço/produto você quer orçar agora?"
+            else:
+                reply = "Qual serviço/produto você tem interesse?"
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        # incrementa o número do orçamento aqui (novo orçamento)
-        quote_number = int(convo.get("quote_number") or 0) + 1
+        # Se for retorno e já tiver cep_padrao, pergunta se quer usar
+        # Se não tiver cep_padrao, pede CEP direto
+        # Salvamos o "produto" no step seguinte via "pass-through" (você manda o texto e seguimos o fluxo)
+        # Para não depender de estado externo, vamos guardar o produto num "marcador" no step (DB) usando step = "cep_confirm|<produto>" etc.
+        produto = text.strip()
 
-        convo = update_conversation(
-            company_id, phone,
-            produto=text,
-            quote_number=quote_number,
-            status="open",
-        )
-
-        # Se já tem CEP padrão, pergunta se usa ele
-        if convo.get("cep_padrao"):
-            convo = update_conversation(company_id, phone, step="cep_confirm", cep_atual="")
+        if cep_padrao:
+            convo = update_conversation(company_id, phone, step=f"cep_confirm::{produto}", status="open")
             reply = (
-                f"Boa! Para este orçamento, você quer usar o CEP padrão ({convo.get('cep_padrao')})?\n"
+                f"Show! Vou preparar o orçamento de *{produto}*.\n"
+                f"Quer usar o seu CEP padrão *{cep_padrao}*?\n"
                 "Responda:\n"
-                "1 = Sim, usar esse CEP\n"
-                "2 = Não, informar outro CEP"
+                "1 = Sim (usar padrão)\n"
+                "2 = Não (informar outro CEP)"
             )
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        # Se não tem CEP padrão, pede CEP e depois pergunta se salva como padrão
-        convo = update_conversation(company_id, phone, step="cep")
-        reply = "Agora me envie seu CEP (8 dígitos) pra eu preparar a oferta certinha."
+        # sem cep padrão -> pede cep direto
+        convo = update_conversation(company_id, phone, step=f"cep::{produto}", status="open")
+        reply = "Perfeito! Agora me envie seu CEP (apenas números) pra eu preparar a oferta certinha."
         log_message(company_id, phone, "out", reply)
         return {"status": "ok", "reply": reply}
 
     # ---------------------------
-    # Step: CEP_CONFIRM (1 usa padrão / 2 outro)
+    # Step: CEP_CONFIRM (1 usar padrão, 2 informar outro)
+    # step vem como: "cep_confirm::<produto>"
     # ---------------------------
-    if step == "cep_confirm":
-        if _is_yes(text):
-            # usa o cep_padrao
-            cep_usado = convo.get("cep_padrao") or ""
-            convo = update_conversation(company_id, phone, cep_atual=cep_usado, step="finalize")
-        elif _is_no(text):
-            convo = update_conversation(company_id, phone, step="cep", cep_atual="")
-            reply = "Beleza. Me envie o CEP (8 dígitos) que você quer usar neste orçamento."
-            log_message(company_id, phone, "out", reply)
-            return {"status": "ok", "reply": reply}
-        else:
-            reply = "Responda com 1 (usar CEP padrão) ou 2 (informar outro CEP)."
+    if step.startswith("cep_confirm::"):
+        produto = step.split("::", 1)[1].strip()
+
+        if text not in {"1", "2"}:
+            reply = "Me responde com 1 (usar CEP padrão) ou 2 (informar outro CEP)."
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        # caiu no finalize com CEP padrão
-        convo = upsert_conversation(company_id, phone)  # pega estado atual
-        quote_number = int(convo.get("quote_number") or 0)
-        export_result = try_export_and_finalize(
-            company, convo,
-            is_returning=True,
-            quote_number=quote_number,
-            cep_usado=convo.get("cep_atual") or convo.get("cep_padrao") or "",
-            cep_alterado=False,
-            salvou_cep_padrao=False,
-        )
-
-        if export_result.get("exported") or export_result.get("reason") == "sheets_not_configured":
-            reply = (
-                f"Fechado, {convo.get('nome','')} ✅\n"
-                f"Já registrei seu interesse em *{convo.get('produto','')}*.\n"
-                "Um vendedor vai te chamar em breve com uma oferta preparada pra você."
-            )
-        else:
-            reply = (
-                f"Fechado, {convo.get('nome','')} ✅\n"
-                "Consegui montar seu pedido, mas tive um problema ao registrar no sistema.\n"
-                "Tente mandar qualquer mensagem (ex: 'ok') em 1 minuto que eu tento registrar novamente."
+        if text == "1":
+            # usa cep_padrao e vai perguntar se quer salvar (aqui não faz sentido salvar, então só finaliza)
+            convo = update_conversation(company_id, phone, step=f"finalize::{produto}::PADRAO", status="open")
+            # “PADRAO” indica que não alterou CEP
+            # cai no finalize no próximo request? Melhor finalizar já aqui:
+            return await _finalize_quote(
+                company_id=company_id,
+                phone=phone,
+                company=company,
+                convo=convo,
+                produto=produto,
+                cep_usado=cep_padrao,
+                cep_alterado=False,
+                salvou_cep_padrao=False,
+                is_returning=is_completed and has_profile,
+                now_iso=now_iso,
             )
 
+        # text == "2" -> pede novo CEP
+        convo = update_conversation(company_id, phone, step=f"cep::{produto}", status="open")
+        reply = "Beleza. Me envie o CEP (8 dígitos, só números)."
         log_message(company_id, phone, "out", reply)
-        return {"status": "ok", "reply": reply, "export": export_result}
+        return {"status": "ok", "reply": reply}
 
     # ---------------------------
-    # Step: CEP (informar CEP do orçamento)
+    # Step: CEP (recebe um CEP)
+    # step vem como: "cep::<produto>"
     # ---------------------------
-    if step == "cep":
-        cep = _normalize_cep(text)
-        if not cep:
+    if step.startswith("cep::"):
+        produto = step.split("::", 1)[1].strip()
+
+        cep_fmt = _normalize_cep(text)
+        if not cep_fmt:
             reply = "CEP inválido. Envie apenas números (8 dígitos)."
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        # usa CEP neste orçamento
-        convo = update_conversation(company_id, phone, cep_atual=cep, step="cep_save", status="open")
-        reply = (
-            f"Show! Vou usar {cep} neste orçamento.\n"
-            "Quer salvar esse CEP como seu padrão para próximos atendimentos?\n"
-            "1 = Sim\n"
-            "2 = Não"
-        )
-        log_message(company_id, phone, "out", reply)
-        return {"status": "ok", "reply": reply}
-
-    # ---------------------------
-    # Step: CEP_SAVE (salvar como padrão ou não) -> exporta
-    # ---------------------------
-    if step == "cep_save":
-        salvou = False
-        if _is_yes(text):
-            # salva como padrão
-            convo = update_conversation(company_id, phone, cep_padrao=convo.get("cep_atual") or "")
-            salvou = True
-        elif _is_no(text):
-            salvou = False
-        else:
-            reply = "Responda com 1 (sim) ou 2 (não). Quer salvar esse CEP como padrão?"
+        # se já tinha cep_padrao e agora usou outro, pergunta se quer salvar como padrão
+        if cep_padrao and cep_fmt != cep_padrao:
+            convo = update_conversation(company_id, phone, step=f"cep_save::{produto}::{cep_fmt}", status="open")
+            reply = (
+                f"Entendi ✅ Vou usar o CEP *{cep_fmt}*.\n"
+                "Quer salvar esse CEP como seu novo CEP padrão?\n"
+                "1 = Sim\n"
+                "2 = Não"
+            )
             log_message(company_id, phone, "out", reply)
             return {"status": "ok", "reply": reply}
 
-        convo = upsert_conversation(company_id, phone)  # atualiza estado
-        quote_number = int(convo.get("quote_number") or 0)
-        cep_usado = convo.get("cep_atual") or ""
-        cep_padrao = convo.get("cep_padrao") or ""
-        cep_alterado = bool(cep_padrao) and (cep_usado != cep_padrao)
+        # se não tinha cep_padrao (primeira vez), oferece salvar como padrão
+        if not cep_padrao:
+            convo = update_conversation(company_id, phone, step=f"cep_save::{produto}::{cep_fmt}", status="open")
+            reply = (
+                f"Perfeito ✅ Vou usar o CEP *{cep_fmt}*.\n"
+                "Quer salvar esse CEP como padrão para próximos orçamentos?\n"
+                "1 = Sim\n"
+                "2 = Não"
+            )
+            log_message(company_id, phone, "out", reply)
+            return {"status": "ok", "reply": reply}
 
-        export_result = try_export_and_finalize(
-            company, convo,
-            is_returning=is_returning_now or (quote_number > 1),
-            quote_number=quote_number,
-            cep_usado=cep_usado,
-            cep_alterado=cep_alterado,
-            salvou_cep_padrao=salvou,
+        # cep igual ao padrão (ou padrão vazio tratado acima) -> finaliza
+        return await _finalize_quote(
+            company_id=company_id,
+            phone=phone,
+            company=company,
+            convo=convo,
+            produto=produto,
+            cep_usado=cep_fmt,
+            cep_alterado=False,
+            salvou_cep_padrao=False,
+            is_returning=is_completed and has_profile,
+            now_iso=now_iso,
         )
 
-        if export_result.get("exported") or export_result.get("reason") == "sheets_not_configured":
-            reply = (
-                f"Fechado, {convo.get('nome','')} ✅\n"
-                f"Já registrei seu interesse em *{convo.get('produto','')}*.\n"
-                "Um vendedor vai te chamar em breve com uma oferta preparada pra você."
-            )
+    # ---------------------------
+    # Step: CEP_SAVE (1 salva, 2 não)
+    # step vem como: "cep_save::<produto>::<cep>"
+    # ---------------------------
+    if step.startswith("cep_save::"):
+        try:
+            rest = step.split("cep_save::", 1)[1]
+            produto, cep_fmt = rest.split("::", 1)
+            produto = produto.strip()
+            cep_fmt = cep_fmt.strip()
+        except Exception:
+            # se corromper, volta pro produto
+            convo = update_conversation(company_id, phone, step="produto", status="open")
+            reply = "Vamos seguir 🙂 Qual serviço/produto você quer orçar?"
+            log_message(company_id, phone, "out", reply)
+            return {"status": "ok", "reply": reply}
+
+        if text not in {"1", "2"}:
+            reply = "Me responde com 1 (salvar como padrão) ou 2 (não salvar)."
+            log_message(company_id, phone, "out", reply)
+            return {"status": "ok", "reply": reply}
+
+        salvou = (text == "1")
+        cep_alterado = bool(cep_padrao) and (cep_fmt != cep_padrao)
+
+        # se salvar, atualiza cep_padrao no perfil
+        if salvou:
+            convo = update_conversation(company_id, phone, cep_padrao=cep_fmt, status="open")
         else:
-            reply = (
-                f"Fechado, {convo.get('nome','')} ✅\n"
-                "Consegui montar seu pedido, mas tive um problema ao registrar no sistema.\n"
-                "Tente mandar qualquer mensagem (ex: 'ok') em 1 minuto que eu tento registrar novamente."
-            )
+            convo = update_conversation(company_id, phone, status="open")
 
-        log_message(company_id, phone, "out", reply)
-        return {"status": "ok", "reply": reply, "export": export_result}
+        return await _finalize_quote(
+            company_id=company_id,
+            phone=phone,
+            company=company,
+            convo=convo,
+            produto=produto,
+            cep_usado=cep_fmt,
+            cep_alterado=cep_alterado,
+            salvou_cep_padrao=salvou,
+            is_returning=is_completed and has_profile,
+            now_iso=now_iso,
+        )
 
-    # ---------------------------
-    # Fallback: reset seguro
-    # ---------------------------
-    update_conversation(
-        company_id, phone,
-        step="nome",
-        status="open",
-        setor="",
-        nome="",
-        email="",
-        produto="",
-        cep_atual="",
-    )
+    # fallback: reseta com segurança
+    convo = update_conversation(company_id, phone, step="nome", status="open")
     reply = "Vamos recomeçar 🙂 Qual é o seu nome?"
     log_message(company_id, phone, "out", reply)
     return {"status": "ok", "reply": reply}
 
 
-# ---------------------------
-# Erro padrão (pra não ficar 500 “mudo”)
-# ---------------------------
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Unhandled error: {exc}")
-    return JSONResponse(status_code=500, content={"status": "error", "error": "Internal Server Error"})
+async def _finalize_quote(
+    company_id: str,
+    phone: str,
+    company: Dict[str, Any],
+    convo: Dict[str, Any],
+    produto: str,
+    cep_usado: str,
+    cep_alterado: bool,
+    salvou_cep_padrao: bool,
+    is_returning: bool,
+    now_iso: str,
+):
+    """
+    Finaliza:
+    1) Insere quote no DB (garante sucesso)
+    2) Exporta pro Sheets (opcional)
+    3) Marca convo como completed e step=produto (pronto pra novo orçamento)
+    """
+    # garante quote_number consistente
+    quote_number = get_next_quote_number(company_id, phone)
+
+    # 1) Persistir quote no DB (se falhar, NÃO exporta)
+    try:
+        qrow = insert_quote(
+            company_id=company_id,
+            phone=phone,
+            quote_number=quote_number,
+            produto=produto,
+            cep_usado=cep_usado,
+            cep_alterado=cep_alterado,
+            salvou_cep_padrao=salvou_cep_padrao,
+            is_returning=is_returning,
+            status="ok",
+        )
+    except Exception as e:
+        logger.exception(f"Falha ao salvar quote no DB: {e}")
+        reply = "Tive um probleminha pra registrar seu pedido 😥 Pode me mandar de novo o produto/serviço?"
+        log_message(company_id, phone, "out", reply)
+        return {"status": "error", "reply": reply}
+
+    # 2) Export opcional pro Sheets (só após DB OK)
+    export_info = None
+    export_error = None
+    try:
+        sheet_id = (company.get("sheet_id") or DEFAULT_SHEET_ID or "").strip()
+        sheet_tab = (company.get("sheet_tab") or DEFAULT_SHEET_TAB or "Página1").strip()
+
+        if sheet_id and GOOGLE_SA_B64:
+            row = [
+                now_iso,                         # created_at
+                company_id,                      # company_id
+                phone,                           # phone
+                1 if is_returning else 0,        # is_returning
+                int(quote_number),               # quote_number
+                (convo.get("nome") or "").strip(),    # nome
+                (convo.get("email") or "").strip(),   # email
+                (produto or "").strip(),              # produto
+                (cep_usado or "").strip(),            # cep_usado
+                (convo.get("cep_padrao") or "").strip(),  # cep_padrao (pós save)
+                1 if cep_alterado else 0,         # cep_alterado
+                1 if salvou_cep_padrao else 0,    # salvou_cep_padrao
+                "ok",                             # status
+            ]
+            export_info = append_to_sheets(sheet_id, sheet_tab, row)
+    except Exception as e:
+        export_error = str(e)
+        logger.error(f"Falha no export pro Sheets (não bloqueia): {e}")
+
+    # 3) Marcar conversa como completed e pronta pra novo orçamento (step produto)
+    convo2 = update_conversation(company_id, phone, step="produto", status="completed")
+
+    reply = (
+        f"Fechado, {convo2.get('nome','')} ✅\n"
+        f"Já registrei seu interesse em *{produto}*.\n"
+        f"CEP considerado: *{cep_usado}*.\n\n"
+        "Um vendedor vai te chamar em breve com uma oferta preparada pra você. 🤝"
+    )
+    log_message(company_id, phone, "out", reply)
+
+    payload = {"status": "ok", "reply": reply, "quote": qrow, "export": export_info}
+    if export_error:
+        payload["export_error"] = export_error
+    return payload
