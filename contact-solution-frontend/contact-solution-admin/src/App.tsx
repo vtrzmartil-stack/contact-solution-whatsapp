@@ -24,7 +24,7 @@ function App() {
   const [adminCompanies, setAdminCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const API_URL = "http://localhost:10000";
+  const API_URL = "https:/contact-solution-whatsapp-1.onrender.com/";
 
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
