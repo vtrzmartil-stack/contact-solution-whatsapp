@@ -32,7 +32,7 @@ app = FastAPI(title="Contact Solution (API V3 - Multi-Tenant + Funil + Admin)")
 # ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # MVP: Libera para qualquer painel acessar
+    allow_origins=["https://contact-solution-whatsapp.vercel.app"], # MVP: Libera para qualquer painel acessar
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
