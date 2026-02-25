@@ -16,7 +16,6 @@ interface UserSession {
 }
 
 function App() {
-  // Ajustado: Removido o 'register' pois agora é tudo interno
   const [currentView, setCurrentView] = useState<'login' | 'dashboard'>('login');
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState('leads');
@@ -24,6 +23,9 @@ function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [adminCompanies, setAdminCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // NOVO: Estado que guarda as mensagens do bot para a empresa logada
+  const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
 
@@ -68,8 +70,8 @@ function App() {
       const result = await response.json();
       if(response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
-        e.currentTarget.reset(); // Limpa o formulário
-        fetchAdminCompanies(); // Atualiza a lista automaticamente
+        e.currentTarget.reset();
+        fetchAdminCompanies();
       } else { alert("Erro: " + result.error); }
     } catch (error) { alert("Erro de conexão."); } 
     finally { setLoading(false); }
@@ -92,16 +94,31 @@ function App() {
     finally { setLoading(false); }
   };
 
+  // NOVO: Busca as mensagens salvas no banco de dados
+  const fetchFlowMessages = async () => {
+    if (!session) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/api/config/flow/${session.companyId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && data.messages.length > 0) {
+          setFlowMessages(data.messages);
+        }
+      }
+    } catch (error) { console.error(error); } 
+    finally { setLoading(false); }
+  };
+
+  // ATUALIZADO: Agora envia o estado inteligente do React, não o HTML da tela
   const handleDeployFlow = async () => {
     if (!session) return;
-    const textareas = document.querySelectorAll('.step-box textarea') as NodeListOf<HTMLTextAreaElement>;
-    const messages = Array.from(textareas).map(txt => txt.value);
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/config/flow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: session.companyId, flow_messages: messages })
+        body: JSON.stringify({ companyId: session.companyId, flow_messages: flowMessages })
       });
       if (response.ok) alert("Fluxo salvo e atualizado!");
     } catch (error) { alert("Erro ao salvar."); } 
@@ -151,16 +168,18 @@ function App() {
       });
       if (response.ok) {
         alert("Empresa deletada com sucesso.");
-        fetchAdminCompanies(); // Atualiza a lista
+        fetchAdminCompanies(); 
       } else { alert("Erro ao deletar."); }
     } catch (error) { alert("Erro de conexão."); } 
     finally { setLoading(false); }
   };
 
+  // ATUALIZADO: O gatilho que avisa o React para buscar as mensagens quando você clica na aba
   useEffect(() => {
     if (currentView === 'dashboard') {
       if (activeTab === 'leads') fetchLeads();
       if (activeTab === 'infra' && session?.role === 'admin') fetchAdminCompanies();
+      if (activeTab === 'flow') fetchFlowMessages(); // Puxa os dados ao abrir a aba
     }
   }, [currentView, activeTab]);
 
@@ -168,7 +187,6 @@ function App() {
   // RENDERIZAÇÃO DAS TELAS
   // ==========================================
 
-  // --- TELA DE LOGIN (Agora blindada) ---
   if (currentView === 'login') {
     return (
       <div className="auth-container">
@@ -185,7 +203,6 @@ function App() {
     );
   }
 
-  // --- FILTROS DO FUNIL DE VENDAS ---
   const leadsBot = leads.filter(l => l.status === 'bot');
   const leadsNegociacao = leads.filter(l => l.status === 'negociacao');
   const leadsConcluida = leads.filter(l => l.status === 'concluida');
@@ -278,7 +295,7 @@ function App() {
           </section>
         )}
 
-        {/* ABA: FLUXO */}
+        {/* ABA: FLUXO (ATUALIZADA PARA LER DO BANCO) */}
         {activeTab === 'flow' && (
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
@@ -286,15 +303,28 @@ function App() {
               <button className="btn-primary" style={{ width: 'auto' }} onClick={handleDeployFlow}>Salvar Alterações</button>
             </div>
             <div style={{ maxWidth: '800px' }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                <div key={n} className="step-box">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}>
-                    <span>Pergunta {n}</span>
-                    <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((idx) => {
+                const n = idx + 1;
+                return (
+                  <div key={n} className="step-box">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}>
+                      <span>Pergunta {n}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
+                    </div>
+                    {/* A MÁGICA ACONTECE AQUI: value={flowMessages[idx]} */}
+                    <textarea 
+                      rows={2} 
+                      placeholder={`Mensagem da etapa ${n}...`} 
+                      value={flowMessages[idx] || ''} 
+                      onChange={(e) => {
+                        const novasMensagens = [...flowMessages];
+                        novasMensagens[idx] = e.target.value;
+                        setFlowMessages(novasMensagens);
+                      }}
+                    />
                   </div>
-                  <textarea rows={2} placeholder={`Mensagem da etapa ${n}...`} defaultValue={n === 1 ? "Olá! Qual o seu nome?" : `Mensagem automática da etapa ${n}...`} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -322,7 +352,6 @@ function App() {
               <button className="btn-primary" style={{ width: 'auto' }} onClick={fetchAdminCompanies}>Atualizar Lista</button>
             </div>
 
-            {/* NOVO: ÁREA DE CRIAÇÃO DE EMPRESA */}
             <div className="card" style={{ marginBottom: '40px', borderLeft: '4px solid #22c55e' }}>
               <h3 style={{ marginTop: 0, marginBottom: '20px' }}>➕ Cadastrar Novo Cliente</h3>
               <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
@@ -338,7 +367,6 @@ function App() {
               </form>
             </div>
 
-            {/* LISTA DE EMPRESAS CADASTRADAS */}
             <h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
             <div className="grid-container">
               {adminCompanies.map((empresa, idx) => (
