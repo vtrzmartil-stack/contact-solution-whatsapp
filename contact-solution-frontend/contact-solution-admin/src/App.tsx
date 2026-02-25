@@ -16,7 +16,8 @@ interface UserSession {
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState<'login' | 'register' | 'dashboard'>('login');
+  // Ajustado: Removido o 'register' pois agora é tudo interno
+  const [currentView, setCurrentView] = useState<'login' | 'dashboard'>('login');
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState('leads');
   
@@ -66,8 +67,9 @@ function App() {
       });
       const result = await response.json();
       if(response.ok) {
-        alert("Empresa registrada com sucesso! Faça login.");
-        setCurrentView('login');
+        alert("Empresa registrada com sucesso no sistema!");
+        e.currentTarget.reset(); // Limpa o formulário
+        fetchAdminCompanies(); // Atualiza a lista automaticamente
       } else { alert("Erro: " + result.error); }
     } catch (error) { alert("Erro de conexão."); } 
     finally { setLoading(false); }
@@ -166,37 +168,18 @@ function App() {
   // RENDERIZAÇÃO DAS TELAS
   // ==========================================
 
+  // --- TELA DE LOGIN (Agora blindada) ---
   if (currentView === 'login') {
     return (
       <div className="auth-container">
         <div className="auth-card">
           <div className="auth-title">ContactSolution</div>
-          <div className="auth-subtitle">Acesse o painel da sua empresa</div>
+          <div className="auth-subtitle">Acesso Restrito</div>
           <form onSubmit={handleLogin}>
             <input type="email" name="email" placeholder="E-mail corporativo" className="input-field" required />
             <input type="password" name="password" placeholder="Senha" className="input-field" required />
             <button type="submit" className="btn-primary" disabled={loading}> {loading ? 'Aguarde...' : 'Entrar no Sistema'} </button>
           </form>
-          <button className="btn-link" onClick={() => setCurrentView('register')}>Nova empresa? Registre-se aqui</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (currentView === 'register') {
-    return (
-      <div className="auth-container">
-        <div className="auth-card">
-          <div className="auth-title">Registro de Empresa</div>
-          <div className="auth-subtitle">Crie seu banco de dados exclusivo</div>
-          <form onSubmit={handleRegister}>
-            <input type="text" name="companyName" placeholder="Nome da Empresa" className="input-field" required />
-            <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
-            <input type="tel" name="whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
-            <input type="password" name="password" placeholder="Crie uma senha" className="input-field" required />
-            <button type="submit" className="btn-primary" disabled={loading}> {loading ? 'Criando...' : 'Registrar Empresa'} </button>
-          </form>
-          <button className="btn-link" onClick={() => setCurrentView('login')}>Já tem uma conta? Faça login</button>
         </div>
       </div>
     );
@@ -334,11 +317,29 @@ function App() {
         {/* ABA: INFRAESTRUTURA (SÓ ADMIN VÊ) */}
         {activeTab === 'infra' && session?.role === 'admin' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
               <div><h2>Painel de Controle (Master)</h2><p style={{ color: 'var(--text-muted)', margin: 0 }}>Gerencie todos os clientes do seu SaaS.</p></div>
               <button className="btn-primary" style={{ width: 'auto' }} onClick={fetchAdminCompanies}>Atualizar Lista</button>
             </div>
 
+            {/* NOVO: ÁREA DE CRIAÇÃO DE EMPRESA */}
+            <div className="card" style={{ marginBottom: '40px', borderLeft: '4px solid #22c55e' }}>
+              <h3 style={{ marginTop: 0, marginBottom: '20px' }}>➕ Cadastrar Novo Cliente</h3>
+              <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <input type="text" name="companyName" placeholder="Nome da Empresa" className="input-field" required />
+                <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
+                <input type="tel" name="whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
+                <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}> 
+                    {loading ? 'Criando...' : 'Registrar Nova Empresa'} 
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* LISTA DE EMPRESAS CADASTRADAS */}
+            <h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
             <div className="grid-container">
               {adminCompanies.map((empresa, idx) => (
                 <div className="card" key={idx} style={{ borderLeft: '4px solid var(--btn-blue)' }}>
