@@ -32,7 +32,12 @@ app = FastAPI(title="Contact Solution (API V3 - Multi-Tenant + Funil + Admin)")
 # ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://contact-solution-whatsapp.vercel.app"], # MVP: Libera para qualquer painel acessar
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://contact-solution-whatsapp.vercel.app"
+    ], 
+    allow_origin_regex="https://.*\.vercel\.app", # Libera para qualquer subdomínio dinâmico da Vercel
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -259,6 +264,39 @@ def api_get_leads(company_id: str):
     except Exception:
         return []
 
+# 1. ROTA PARA LER AS MENSAGENS SALVAS (GET)
+@app.get("/api/config/flow/{company_id}")
+def api_get_config_flow(company_id: str):
+    if company_id == "MASTER":
+        return {"messages": [""] * 9}
+
+    keys_map = [
+        "ask_name", "ask_email", "ask_product_first", "ask_cep",
+        "confirm_use_default_cep", "ask_other_cep", "ask_save_cep_as_default",
+        "ask_replace_default_cep", "final_reply"
+    ]
+
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select settings from companies where id=%s", (company_id,))
+                row = cur.fetchone()
+                
+        if not row:
+            return JSONResponse(status_code=404, content={"error": "Empresa não encontrada"})
+            
+        settings = _safe_settings(row.get("settings"))
+        saved_messages = settings.get("messages", {})
+
+        # Reconstrói a array de 9 posições baseada no que está salvo
+        messages_array = [saved_messages.get(key, "") for key in keys_map]
+        
+        return {"messages": messages_array}
+    except Exception as e:
+        logger.error(f"Erro ao ler fluxo: {e}")
+        return JSONResponse(status_code=500, content={"error": "Erro ao buscar fluxo."})
+
+# 2. ROTA PARA SALVAR AS MENSAGENS (POST)
 @app.post("/api/config/flow")
 async def api_config_flow(request: Request):
     data = await request.json()
@@ -292,7 +330,8 @@ async def api_config_flow(request: Request):
                 cur.execute("update companies set settings = %s::jsonb where id=%s", (json.dumps(settings), company_id))
             conn.commit()
         return {"status": "ok"}
-    except Exception:
+    except Exception as e:
+        logger.error(f"Erro ao salvar fluxo: {e}")
         return JSONResponse(status_code=500, content={"error": "Erro ao salvar."})
 
 
