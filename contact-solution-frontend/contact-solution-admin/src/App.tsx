@@ -25,64 +25,70 @@ function App() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // URL DO SEU BACKEND
-  const API_URL = "https://contact-solution-whatsapp.onrender.com";
+  // URL DO SEU BACKEND LOCAL
+  const API_URL = "http://localhost:10000";
 
   // ==========================================
-  // FUNÇÕES PRONTAS PARA O BACKEND
+  // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
   // ==========================================
 
-  // 1. Função de Login
+  // 1. Função de Login REAL
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get('email');
-    const password = formData.get('password');
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
 
     setLoading(true);
     try {
-      // SIMULAÇÃO DE LOGIN (Substituiremos pelo fetch real depois)
-      if (email === 'admin@solution.com' && password === '123') {
-        setSession({ companyId: 'MASTER', companyName: 'Solution Admin', role: 'admin' });
-        // Injetando dados falsos para visualização
-        setLeads([
-          { id: '1', nome: 'Vitor Hugo', telefone: '+55 11 9999-0001', status: 'bot', fase: 3 },
-          { id: '2', nome: 'Empresa Alpha', telefone: '+55 11 9999-0002', status: 'humano', fase: 9 }
-        ]);
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      
+      const data = await response.json();
+      
+      if(response.ok) {
+        setSession({ companyId: data.companyId, companyName: data.companyName, role: data.role as 'admin' | 'client' });
         setCurrentView('dashboard');
-      } else {
-        setSession({ companyId: 'CLIENT_01', companyName: 'Empresa Cliente', role: 'client' });
-        setLeads([
-          { id: '3', nome: 'Lead Genérico', telefone: '+55 11 8888-0000', status: 'bot', fase: 1 }
-        ]);
-        setCurrentView('dashboard');
+      } else { 
+        alert(data.error || "Credenciais inválidas"); 
       }
     } catch (error) {
       console.error("Erro no login", error);
+      alert("Erro ao conectar com o servidor. Verifique se o Python está rodando.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Função de Registro de Nova Empresa
+  // 2. Função de Registro REAL
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
 
-    // RESOLVE O AVISO "data is declared but never read"
-    console.log("Dados prontos para envio ao backend:", data);
-
     setLoading(true);
     try {
-      // Simulação
-      setTimeout(() => {
-        alert("Empresa registrada com sucesso na base de dados!");
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      
+      const result = await response.json();
+
+      if(response.ok) {
+        alert("Empresa registrada com sucesso! ID gerado: " + result.companyId);
         setCurrentView('login');
-        setLoading(false);
-      }, 1000);
+      } else {
+        alert("Erro: " + result.error);
+      }
     } catch (error) {
       console.error(error);
+      alert("Erro ao conectar com o servidor. Verifique se o Python está rodando.");
+    } finally {
       setLoading(false);
     }
   };
@@ -215,7 +221,6 @@ function App() {
       {/* CONTEÚDO PRINCIPAL */}
       <main className="main-content">
         
-        {/* ABA: LEADS - RESOLVE O AVISO 'leads is declared but never read' */}
         {activeTab === 'leads' && (
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
@@ -249,7 +254,6 @@ function App() {
           </section>
         )}
 
-        {/* ABA: FLUXO DE 9 ETAPAS */}
         {activeTab === 'flow' && (
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
@@ -276,7 +280,6 @@ function App() {
           </section>
         )}
 
-        {/* ABA: INFRAESTRUTURA */}
         {activeTab === 'infra' && session?.role === 'admin' && (
           <section>
             <h2>Infraestrutura Geral (Super Admin)</h2>
