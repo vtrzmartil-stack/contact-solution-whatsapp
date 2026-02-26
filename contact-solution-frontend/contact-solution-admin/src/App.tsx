@@ -31,6 +31,8 @@ function App() {
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
+  
+  const [newMessage, setNewMessage] = useState("");
 
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
@@ -78,6 +80,37 @@ function App() {
       } else { alert("Erro: " + result.error); }
     } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedLead) return;
+
+    // Cria uma mensagem temporária para aparecer na tela na mesma hora!
+    const tempMsg = { direction: 'outbound', text: newMessage, created_at: new Date().toISOString() };
+    setChatMessages(prev => [...prev, tempMsg]);
+    
+    const textToSend = newMessage;
+    setNewMessage(""); // Limpa o campo de texto
+
+    try {
+      // CORREÇÃO 1: Trocamos API_BASE_URL por API_URL
+      const response = await fetch(`${API_URL}/api/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // CORREÇÃO 2: Colocamos (as any) para o TypeScript não reclamar
+          company_id: (selectedLead as any).company_id,
+          phone: selectedLead.telefone,
+          text: textToSend
+        })
+      });
+
+      if (!response.ok) {
+        console.error("Falha ao salvar a mensagem no banco");
+      }
+    } catch (error) {
+      console.error("Erro de rede:", error);
+    }
   };
 
   const fetchLeads = async () => {
@@ -470,14 +503,22 @@ useEffect(() => {
                     {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>Sem mensagens.</p>}
                   </div>
 
-                  {/* RODAPÉ COM O TECLADO E BOTÃO DE ENVIAR */}
+                  {/* RODAPÉ COM TECLADO E BOTÃO ATIVOS */}
                   <div className="chat-footer" style={{ display: 'flex', padding: '15px', background: '#1e293b', borderTop: '1px solid #334155' }}>
                     <input 
                       type="text" 
-                      placeholder="Digite sua mensagem..." 
+                      placeholder="Digite a sua mensagem..." 
                       style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white', outline: 'none', marginRight: '10px' }}
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          sendMessage();
+                        }
+                      }}
                     />
                     <button 
+                      onClick={sendMessage}
                       style={{ padding: '0 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
                       onMouseOver={(e) => e.currentTarget.style.background = '#1d4ed8'}
                       onMouseOut={(e) => e.currentTarget.style.background = '#2563eb'}

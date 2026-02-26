@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import json
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -183,6 +184,32 @@ def get_chat_history(company_id: str, phone: str):
     except Exception as e:
         print(f"Erro ao buscar mensagens: {e}")
         return JSONResponse(content=[], status_code=500)
+    
+    # Criamos um modelo para o corpo da requisição
+class MessageSendRequest(BaseModel):
+    company_id: str
+    phone: str
+    text: str
+
+@app.post("/api/messages/send")
+async def send_message(payload: MessageSendRequest):
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Salva a mensagem no banco de dados
+                cur.execute(
+                    "INSERT INTO messages (company_id, phone, direction, text, created_at) VALUES (%s, %s, 'outbound', %s, NOW())",
+                    (payload.company_id, payload.phone, payload.text)
+                )
+            conn.commit()
+            
+        # ⚠️ NOTA: É aqui que no futuro você vai colocar o código 
+        # para disparar a mensagem real para a Evolution API / Z-API / etc.
+            
+        return {"status": "success", "message": "Mensagem salva com sucesso"}
+    except Exception as e:
+        print(f"Erro ao enviar mensagem: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
 # MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
