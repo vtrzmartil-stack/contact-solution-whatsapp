@@ -440,47 +440,47 @@ useEffect(() => {
     
     </DragDropContext>
             {selectedLead && (
-              <div className="chat-overlay" onClick={() => setSelectedLead(null)}>
-                <div className="chat-modal" onClick={e => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div 
+                className="chat-overlay" 
+                onClick={() => setSelectedLead(null)}
+                style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}
+              >
+                <div 
+                  className="chat-modal" 
+                  onClick={e => e.stopPropagation()} 
+                  style={{ display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '450px', height: '80vh', maxHeight: '700px', backgroundColor: '#1e293b', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}
+                >
                   
                   {/* CABEÇALHO DO CHAT */}
-                  <div className="chat-header">
+                  <div className="chat-header" style={{ padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#334155', borderBottom: '1px solid #475569' }}>
                     <div>
-                      <strong>{selectedLead.nome || 'Lead'}</strong>
-                      <div style={{ fontSize: '12px', opacity: 0.7 }}>{selectedLead.telefone}</div>
+                      <strong style={{ fontSize: '16px', color: 'white' }}>{selectedLead.nome || 'Lead'}</strong>
+                      <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '2px' }}>{selectedLead.telefone}</div>
                     </div>
-                    <button onClick={() => setSelectedLead(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '20px' }}>✕</button>
+                    <button onClick={() => setSelectedLead(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '24px' }}>✕</button>
                   </div>
                   
                   {/* CORPO DAS MENSAGENS */}
-                  <div className="chat-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '20px', height: '400px', overflowY: 'auto', background: '#0f172a', flex: 1 }}>
+                  <div className="chat-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '20px', overflowY: 'auto', background: '#0f172a', flex: 1 }}>
                     {chatMessages.map((msg, idx) => (
                       <div key={idx} className={`chat-bubble ${msg.direction === 'inbound' ? 'received' : 'sent'}`}>
                         {msg.text}
                       </div>
                     ))}
-                    {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5 }}>Sem mensagens.</p>}
+                    {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>Sem mensagens.</p>}
                   </div>
 
-                  {/* 🔥 NOVO: RODAPÉ COM O TECLADO E BOTÃO DE ENVIAR */}
+                  {/* RODAPÉ COM O TECLADO E BOTÃO DE ENVIAR */}
                   <div className="chat-footer" style={{ display: 'flex', padding: '15px', background: '#1e293b', borderTop: '1px solid #334155' }}>
                     <input 
                       type="text" 
                       placeholder="Digite sua mensagem..." 
                       style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white', outline: 'none', marginRight: '10px' }}
-                      // onChange={(e) => setNewMessage(e.target.value)}  <-- Descomente isso quando for fazer a função de envio
-                      // value={newMessage} <-- E isso também
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          // sendMessage(); <-- Função que envia ao apertar Enter
-                        }
-                      }}
                     />
                     <button 
                       style={{ padding: '0 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
                       onMouseOver={(e) => e.currentTarget.style.background = '#1d4ed8'}
                       onMouseOut={(e) => e.currentTarget.style.background = '#2563eb'}
-                      // onClick={sendMessage} <-- Função que envia ao clicar
                     >
                       Enviar
                     </button>
