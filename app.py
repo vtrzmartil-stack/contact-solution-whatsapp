@@ -348,6 +348,39 @@ async def api_send_message(request: Request):
     except Exception as e:
         logger.error(f"Erro ao disparar WhatsApp: {e}")
         return JSONResponse(status_code=500, content={"error": "Falha ao enviar"})    
+    
+# ==========================================
+# BUSCAR LISTA DE EMPRESAS (Painel Admin)
+# ==========================================
+@app.get("/api/admin/companies")
+async def get_all_companies():
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Busca as empresas (não trazemos a senha por segurança)
+                cur.execute("SELECT id, name, email, phone, bot_whatsapp, created_at FROM companies ORDER BY created_at DESC")
+                rows = cur.fetchall()
+                
+                if not rows:
+                    return JSONResponse(content=[])
+
+                colunas = [desc[0] for desc in cur.description]
+                
+                companies = []
+                for row in rows:
+                    d = dict(row) if isinstance(row, dict) or hasattr(row, 'keys') else dict(zip(colunas, row))
+                    companies.append({
+                        "id": str(d.get("id", "")),
+                        "name": str(d.get("name", "")),
+                        "email": str(d.get("email", "")),
+                        "phone": str(d.get("phone", "")),
+                        "bot_whatsapp": str(d.get("bot_whatsapp", "")),
+                        "created_at": str(d.get("created_at", ""))
+                    })
+                return JSONResponse(content=companies)
+    except Exception as e:
+        print(f"Erro ao buscar empresas: {e}")
+        return JSONResponse(content=[], status_code=500)    
 
 if __name__ == "__main__":
     import uvicorn

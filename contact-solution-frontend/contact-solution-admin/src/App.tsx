@@ -65,21 +65,29 @@ function App() {
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
 
-    setLoading(true);
+setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
+      // 🎯 CORREÇÃO: Apontando para a rota certa do Backend
+      const response = await fetch(`${API_URL}/api/admin/companies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      
       const result = await response.json();
+      
       if (response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
         e.currentTarget.reset();
-        fetchAdminCompanies();
-      } else { alert("Erro: " + result.error); }
-    } catch (error) { alert("Erro de conexão."); }
-    finally { setLoading(false); }
+        fetchAdminCompanies(); // Isso aqui vai recarregar a tabela na hora!
+      } else { 
+        alert("Erro: " + result.error); 
+      }
+    } catch (error) { 
+      alert("Erro de conexão."); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const sendMessage = async () => {
@@ -595,19 +603,27 @@ useEffect(() => {
             </div>
 
             <div className="card" style={{ marginBottom: '40px', borderLeft: '4px solid #22c55e' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '20px' }}>➕ Cadastrar Novo Cliente</h3>
-              <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <input type="text" name="companyName" placeholder="Nome da Empresa" className="input-field" required />
-                <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
-                <input type="tel" name="whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
-                <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}>
-                    {loading ? 'Criando...' : 'Registrar Nova Empresa'}
-                  </button>
-                </div>
-              </form>
+          <h3 style={{ marginTop: 0, marginBottom: '20px' }}>✨ Cadastrar Novo Cliente</h3>
+          <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            
+            {/* Nomes corrigidos para bater EXATAMENTE com o Backend */}
+            <input type="text" name="name" placeholder="Nome da Empresa" className="input-field" required />
+            <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
+            
+            {/* Campo novo que o Python exige: */}
+            <input type="tel" name="phone" placeholder="Telefone da Empresa" className="input-field" required />
+            
+            <input type="tel" name="bot_whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
+            <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
+            
+            {/* BOTÃO E FECHAMENTOS QUE ESTAVAM FALTANDO */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}>
+                {loading ? 'Criando...' : 'Registrar Nova Empresa'}
+              </button>
             </div>
+          </form>
+        </div>
 
             <h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
             <div className="grid-container">
