@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 
 import psycopg
 from psycopg.rows import dict_row
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import json
 
 load_dotenv()
 
@@ -88,10 +91,12 @@ async def api_login(request: Request):
         
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
-@app.get("/api/leads/{company_id}")
-def api_get_leads(company_id: str):
-    query = "SELECT * FROM conversations ORDER BY updated_at DESC" if company_id == "MASTER" else \
-            "SELECT * FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+@app.get("/api/leads/{company_id}", response_model=None) # response_model=None evita o erro 422
+async def api_get_leads(company_id: str):
+    # Forçamos a query com colunas explícitas para evitar erro de ordem
+    query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC" if company_id == "MASTER" else \
+            "SELECT id, company_id, phone, status, fase, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+    
     params = () if company_id == "MASTER" else (company_id,)
     
     try:
@@ -99,21 +104,24 @@ def api_get_leads(company_id: str):
             with conn.cursor() as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-                # Transforma em lista de dicionários para o FastAPI não se confundir
+                
                 leads = []
                 for row in rows:
                     leads.append({
                         "id": row[0],
-                        "company_id": row[1],
+                        "company_id": str(row[1]),
                         "telefone": row[2],
                         "status": row[3],
                         "fase": row[4],
-                        "nome": row[5] if len(row) > 5 else "Lead"
+                        "nome": row[5] if row[5] else "Lead"
                     })
-                return leads
+                
+                # Retornamos como JSONResponse direto para o FastAPI não tentar validar
+                return JSONResponse(content=leads)
+                
     except Exception as e:
         print(f"Erro ao buscar leads: {e}")
-        return []
+        return JSONResponse(content=[], status_code=500)
 
 @app.put("/api/leads/{lead_id}/status")
 async def update_lead_status(lead_id: int, data: StatusUpdate):
