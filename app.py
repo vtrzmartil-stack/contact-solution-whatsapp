@@ -148,12 +148,38 @@ async def update_lead_status(lead_id: int, data: StatusUpdate):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# ==========================================
+# ROTA DE MENSAGENS BLINDADA (Fim do Erro 0)
+# ==========================================
 @app.get("/api/messages/{company_id}/{phone}")
 def get_chat_history(company_id: str, phone: str):
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT direction, text, created_at FROM messages WHERE company_id=%s AND phone=%s ORDER BY created_at ASC", (company_id, phone))
-            return cur.fetchall()
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT direction, text, created_at FROM messages WHERE company_id=%s AND phone=%s ORDER BY created_at ASC", (company_id, phone))
+                rows = cur.fetchall()
+                
+                # Se realmente não tiver mensagens no banco, devolve vazio
+                if not rows:
+                    return JSONResponse(content=[])
+
+                # Pega o nome das colunas dinamicamente
+                colunas = [desc[0] for desc in cur.description]
+                
+                messages = []
+                for row in rows:
+                    # Une nomes com valores perfeitamente
+                    d = dict(row) if isinstance(row, dict) or hasattr(row, 'keys') else dict(zip(colunas, row))
+                    
+                    messages.append({
+                        "direction": str(d.get("direction", "")),
+                        "text": str(d.get("text", "")),
+                        "created_at": str(d.get("created_at", ""))
+                    })
+                return JSONResponse(content=messages)
+    except Exception as e:
+        print(f"Erro ao buscar mensagens: {e}")
+        return JSONResponse(content=[], status_code=500)
 
 # ==========================================
 # MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
