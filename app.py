@@ -149,26 +149,29 @@ async def update_lead_status(lead_id: int, data: StatusUpdate):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
-# ROTA DE MENSAGENS BLINDADA (Fim do Erro 0)
+# ROTA DE MENSAGENS BLINDADA E COM ACESSO ADMIN
 # ==========================================
 @app.get("/api/messages/{company_id}/{phone}")
 def get_chat_history(company_id: str, phone: str):
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT direction, text, created_at FROM messages WHERE company_id=%s AND phone=%s ORDER BY created_at ASC", (company_id, phone))
+                # 🔥 Se for o Admin (MASTER), busca só pelo telefone
+                if company_id == "MASTER":
+                    cur.execute("SELECT direction, text, created_at FROM messages WHERE phone=%s ORDER BY created_at ASC", (phone,))
+                # Se for um cliente normal, exige que a mensagem seja da empresa dele
+                else:
+                    cur.execute("SELECT direction, text, created_at FROM messages WHERE company_id=%s AND phone=%s ORDER BY created_at ASC", (company_id, phone))
+                
                 rows = cur.fetchall()
                 
-                # Se realmente não tiver mensagens no banco, devolve vazio
                 if not rows:
                     return JSONResponse(content=[])
 
-                # Pega o nome das colunas dinamicamente
                 colunas = [desc[0] for desc in cur.description]
                 
                 messages = []
                 for row in rows:
-                    # Une nomes com valores perfeitamente
                     d = dict(row) if isinstance(row, dict) or hasattr(row, 'keys') else dict(zip(colunas, row))
                     
                     messages.append({
