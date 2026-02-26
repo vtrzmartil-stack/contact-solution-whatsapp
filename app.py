@@ -62,16 +62,18 @@ def _safe_settings(value: Any) -> Dict[str, Any]:
 # ROTAS DE ADMIN E AUTENTICAÇÃO
 # ==========================================
 
+# ==========================================
+# 1. LOGIN BLINDADO
+# ==========================================
 @app.post("/api/auth/login")
 async def api_login(request: Request):
     data = await request.json()
     email, password = data.get("email"), data.get("password")
     
-    # Login do Admin
+    # Bypass do Admin
     if email == "admin@solution.com" and password == "123":
         return {"companyId": "MASTER", "companyName": "Solution Admin", "role": "admin"}
     
-    # Login do Cliente
     hashed_pw = hash_password(password)
     try:
         with db_conn() as conn:
@@ -79,11 +81,13 @@ async def api_login(request: Request):
                 cur.execute("SELECT id, name FROM companies WHERE email=%s AND password=%s", (email, hashed_pw))
                 row = cur.fetchone()
         
-        # Se encontrou o usuário, acessamos pelos índices 0 e 1
         if row: 
+            # Verifica automaticamente se o banco mandou um Dicionário ou uma Tupla
+            is_dict = isinstance(row, dict) or hasattr(row, 'keys')
+            
             return {
-                "companyId": str(row[0]), # Convertemos para String para evitar erro 422 no Front
-                "companyName": row[1], 
+                "companyId": str(row["id"] if is_dict else row[0]), 
+                "companyName": row["name"] if is_dict else row[1], 
                 "role": "client"
             }
     except Exception as e:
@@ -91,12 +95,14 @@ async def api_login(request: Request):
         
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
+# ==========================================
+# 2. BUSCA DE LEADS BLINDADA
+# ==========================================
 @app.get("/api/leads/{company_id}", response_model=None)
 async def api_get_leads(company_id: str):
     cid = str(company_id)
     query = "SELECT id, company_id, phone, status, status_funil, nome FROM conversations ORDER BY updated_at DESC" if cid == "MASTER" else \
             "SELECT id, company_id, phone, status, status_funil, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
-            
     params = () if cid == "MASTER" else (cid,)
     
     try:
@@ -106,13 +112,16 @@ async def api_get_leads(company_id: str):
                 rows = cur.fetchall()
                 leads = []
                 for row in rows:
+                    # Verifica o formato de cada linha
+                    is_dict = isinstance(row, dict) or hasattr(row, 'keys')
+                    
                     leads.append({
-                        "id": str(row[0]),
-                        "company_id": str(row[1]),
-                        "telefone": str(row[2]) if row[2] else "",
-                        "status": str(row[3]) if row[3] else "open",
-                        "status_funil": str(row[4]) if row[4] else "novo", 
-                        "nome": str(row[5]) if row[5] else "Lead"
+                        "id": str(row["id"] if is_dict else row[0]),
+                        "company_id": str(row["company_id"] if is_dict else row[1]),
+                        "telefone": str(row["phone"] if is_dict else (row[2] or "")),
+                        "status": str(row["status"] if is_dict else (row[3] or "open")),
+                        "status_funil": str(row["status_funil"] if is_dict else (row[4] or "novo")), 
+                        "nome": str(row["nome"] if is_dict else (row[5] or "Lead"))
                     })
                 return JSONResponse(content=leads)
     except Exception as e:
