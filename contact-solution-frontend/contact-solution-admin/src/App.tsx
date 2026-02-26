@@ -495,11 +495,16 @@ useEffect(() => {
                   
                   {/* CORPO DAS MENSAGENS */}
                   <div className="chat-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '20px', overflowY: 'auto', background: '#0f172a', flex: 1 }}>
-                    {chatMessages.map((msg, idx) => (
-                      <div key={idx} className={`chat-bubble ${msg.direction === 'inbound' ? 'received' : 'sent'}`}>
-                        {msg.text}
-                      </div>
-                    ))}
+                    {chatMessages.map((msg, idx) => {
+                      // Verifica se é 'in' ou 'inbound' para tratar como recebida do cliente
+                      const isReceived = msg.direction === 'in' || msg.direction === 'inbound';
+                      
+                      return (
+                        <div key={idx} className={`chat-bubble ${isReceived ? 'received' : 'sent'}`}>
+                          {msg.text}
+                        </div>
+                      );
+                    })}
                     {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>Sem mensagens.</p>}
                   </div>
 
