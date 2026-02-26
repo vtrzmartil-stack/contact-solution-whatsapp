@@ -1,27 +1,28 @@
 import os
 import json
-import base64
 import logging
 import uuid
 import hashlib
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict
+import requests
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
-load_dotenv()
 
 import psycopg
 from psycopg.rows import dict_row
-from pydantic import BaseModel
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import json
 
-class StatusUpdate(BaseModel):
-    status: str
+load_dotenv()
 
 # ---------------------------
-# Logging & Env
+# Configurações e Logging
 # ---------------------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("contact-solution")
@@ -29,362 +30,229 @@ logger = logging.getLogger("contact-solution")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-app = FastAPI(title="Contact Solution (API V3 - Multi-Tenant + Funil + Admin)")
+app = FastAPI(title="Contact Solution OS - Full Engine")
 
-# ---------------------------
-# CORS (Painel Admin React)
-# ---------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://contact-solution-whatsapp.vercel.app",
-        "https://contactsolution.com.br",
-        "https://www.contactsolution.com.br"
-    ], 
-    allow_origin_regex="https://.*\.vercel\.app", # Libera para qualquer subdomínio dinâmico da Vercel
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+class StatusUpdate(BaseModel):
+    status: str
+
 # ---------------------------
-# DB helpers
+# Helpers de Banco
 # ---------------------------
 def db_conn():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL ausente")
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-def ensure_tables_and_migrate():
-    if not DATABASE_URL:
-        logger.warning("DATABASE_URL ausente; pulando criação de tabelas.")
-        return
-
-    ddl = """
-    create table if not exists companies (
-      id text primary key,
-      name text not null,
-      email text unique,
-      password text,
-      phone text,
-      sheet_id text,
-      sheet_tab text default 'Página1',
-      bot_enabled boolean not null default true,
-      bot_mode text not null default 'active',
-      settings jsonb not null default '{}'::jsonb,
-      created_at timestamptz not null default now()
-    );
-
-    create table if not exists conversations (
-      id bigserial primary key,
-      company_id text not null references companies(id) on delete cascade,
-      phone text not null,
-      step text not null default 'nome',
-      nome text default '',
-      email text default '',
-      cep_padrao text default '',
-      status text not null default 'open',
-      status_funil text not null default 'negociacao', -- NOVO: Para o Kanban
-      updated_at timestamptz not null default now(),
-      created_at timestamptz not null default now(),
-      unique(company_id, phone)
-    );
-
-    create table if not exists messages (
-      id bigserial primary key,
-      company_id text not null references companies(id) on delete cascade,
-      phone text not null,
-      direction text not null,
-      text text not null,
-      created_at timestamptz not null default now()
-    );
-    """
-
-    migrations = [
-        "alter table companies add column if not exists email text unique",
-        "alter table companies add column if not exists password text",
-        "alter table companies add column if not exists phone text",
-        "alter table conversations add column if not exists status_funil text default 'negociacao'",
-    ]
-
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(ddl)
-                for m in migrations:
-                    try:
-                        cur.execute(m)
-                    except Exception as e:
-                        pass # ignora se a coluna já existir e der erro
-            conn.commit()
-        logger.info("DB OK: Tabelas garantidas + migração do Kanban aplicada.")
-    except Exception as e:
-        logger.exception(f"Falha ao criar/verificar tabelas: {e}")
-
-@app.on_event("startup")
-def _startup():
-    ensure_tables_and_migrate()
-
 def _safe_settings(value: Any) -> Dict[str, Any]:
-    if value is None: return {}
+    if not value: return {}
     if isinstance(value, dict): return value
-    if isinstance(value, str):
-        try: return json.loads(value)
-        except: return {}
-    return {}
+    try: return json.loads(value)
+    except: return {}
 
 # ==========================================
-# ROTAS DA API FRONTEND
+# ROTAS DE ADMIN E AUTENTICAÇÃO
 # ==========================================
-
-@app.post("/api/auth/register")
-async def api_register(request: Request):
-    data = await request.json()
-    name = data.get("companyName", "").strip()
-    email = data.get("email", "").strip()
-    phone = data.get("whatsapp", "").strip()
-    password = data.get("password", "").strip()
-
-    if not name or not email or not password:
-        return JSONResponse(status_code=400, content={"error": "Preencha todos os campos."})
-
-    company_id = f"NODE_{uuid.uuid4().hex[:8].upper()}"
-    hashed_pw = hash_password(password)
-
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "insert into companies (id, name, email, phone, password) values (%s, %s, %s, %s, %s)",
-                    (company_id, name, email, phone, hashed_pw)
-                )
-            conn.commit()
-        return {"status": "ok", "companyId": company_id}
-    except psycopg.errors.UniqueViolation:
-        return JSONResponse(status_code=400, content={"error": "Este e-mail já está registrado."})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": "Erro no servidor."})
 
 @app.post("/api/auth/login")
 async def api_login(request: Request):
     data = await request.json()
-    email = data.get("email", "").strip()
-    password = data.get("password", "").strip()
-
-    # Super Admin
+    email, password = data.get("email"), data.get("password")
+    
+    # Login do Admin
     if email == "admin@solution.com" and password == "123":
         return {"companyId": "MASTER", "companyName": "Solution Admin", "role": "admin"}
-
-    hashed_pw = hash_password(password)
-
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("select id, name from companies where email = %s and password = %s", (email, hashed_pw))
-                row = cur.fetchone()
-                
-        if row:
-            return {"companyId": row["id"], "companyName": row["name"], "role": "client"}
-        else:
-            return JSONResponse(status_code=401, content={"error": "Credenciais inválidas."})
-    except Exception:
-        return JSONResponse(status_code=500, content={"error": "Erro no servidor."})
-
-@app.post("/api/auth/change-password")
-async def api_change_password(request: Request):
-    data = await request.json()
-    company_id = data.get("companyId")
-    nova_senha = data.get("novaSenha")
-
-    if company_id == "MASTER":
-        return {"status": "ok"} # Simulação para o admin master
-
-    if not company_id or not nova_senha:
-        return JSONResponse(status_code=400, content={"error": "Dados inválidos"})
-
-    hashed_pw = hash_password(nova_senha)
-
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("update companies set password = %s where id = %s", (hashed_pw, company_id))
-            conn.commit()
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Erro ao trocar senha: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erro no servidor"})
-
-# ==========================================
-# ROTAS DO SUPER ADMIN (INFRAESTRUTURA)
-# ==========================================
-
-@app.get("/api/admin/companies")
-def api_admin_get_companies():
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                # Retorna tudo, menos a senha (por segurança)
-                cur.execute("select id, name, email, phone from companies order by created_at desc")
-                rows = cur.fetchall()
-        return {"companies": rows}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": "Erro ao buscar empresas."})
-
-@app.delete("/api/admin/companies/{target_id}")
-def api_admin_delete_company(target_id: str):
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                # O ON DELETE CASCADE no banco vai apagar os leads dessa empresa automaticamente
-                cur.execute("delete from companies where id = %s", (target_id,))
-            conn.commit()
-        return {"status": "ok"}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": "Erro ao apagar empresa."})
-
-
-# ==========================================
-# ROTAS DE DADOS (LEADS E FLUXO)
-# ==========================================
-
-@app.get("/api/leads/{company_id}")
-@app.put("/api/leads/{lead_id}/status")
-async def update_lead_status(lead_id: int, data: StatusUpdate):
-    new_status = data.status
     
+    # Login do Cliente
+    hashed_pw = hash_password(password)
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                # Lógica Inteligente de Kanban + Robô
-                if new_status == 'bot':
-                    # Volta para o bot: status volta a ser 'open'
-                    cur.execute(
-                        "UPDATE conversations SET status = 'open' WHERE id = %s", 
-                        (lead_id,)
-                    )
-                else:
-                    # Vai para negociação/concluída/perdida: pausa o bot e salva a coluna
-                    cur.execute(
-                        "UPDATE conversations SET status = 'paused', status_funil = %s WHERE id = %s", 
-                        (new_status, lead_id)
-                    )
-            conn.commit()
-        return {"status": "ok", "message": "Lead movido com sucesso!"}
+                cur.execute("SELECT id, name FROM companies WHERE email=%s AND password=%s", (email, hashed_pw))
+                row = cur.fetchone()
+        
+        # Se encontrou o usuário, acessamos pelos índices 0 e 1
+        if row: 
+            return {
+                "companyId": str(row[0]), # Convertemos para String para evitar erro 422 no Front
+                "companyName": row[1], 
+                "role": "client"
+            }
     except Exception as e:
-        logger.error(f"Erro ao atualizar status do lead {lead_id}: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erro interno ao atualizar funil."})
-def api_get_leads(company_id: str):
-    if company_id == "MASTER":
-        query = "select * from conversations order by updated_at desc limit 100"
-        params = ()
-    else:
-        query = "select * from conversations where company_id = %s order by updated_at desc limit 100"
-        params = (company_id,)
+        print(f"Erro no login: {e}")
+        
+    return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
+@app.get("/api/leads/{company_id}", response_model=None)
+async def api_get_leads(company_id: str):
+    cid = str(company_id)
+    query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC" if cid == "MASTER" else \
+            "SELECT id, company_id, phone, status, fase, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+    params = () if cid == "MASTER" else (cid,)
+    
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-        return rows
-    except Exception:
-        return []
-
-# 1. ROTA PARA LER AS MENSAGENS SALVAS (GET)
-@app.get("/api/config/flow/{company_id}")
-def api_get_config_flow(company_id: str):
-    if company_id == "MASTER":
-        return {"messages": [""] * 9}
-
-    keys_map = [
-        "ask_name", "ask_email", "ask_product_first", "ask_cep",
-        "confirm_use_default_cep", "ask_other_cep", "ask_save_cep_as_default",
-        "ask_replace_default_cep", "final_reply"
-    ]
-
-    try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("select settings from companies where id=%s", (company_id,))
-                row = cur.fetchone()
-                
-        if not row:
-            return JSONResponse(status_code=404, content={"error": "Empresa não encontrada"})
-            
-        settings = _safe_settings(row.get("settings"))
-        saved_messages = settings.get("messages", {})
-
-        # Reconstrói a array de 9 posições baseada no que está salvo
-        messages_array = [saved_messages.get(key, "") for key in keys_map]
-        
-        return {"messages": messages_array}
+                leads = []
+                for row in rows:
+                    leads.append({
+                        "id": str(row[0]),
+                        "company_id": str(row[1]),
+                        "telefone": str(row[2]) if row[2] else "",
+                        "status": str(row[3]) if row[3] else "open",
+                        "status_funil": str(row[4]) if row[4] else "novo", # <-- Ajustei para status_funil que seu Front espera!
+                        "nome": str(row[5]) if row[5] else "Lead"
+                    })
+                return JSONResponse(content=leads)
     except Exception as e:
-        logger.error(f"Erro ao ler fluxo: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erro ao buscar fluxo."})
+        print(f"Erro ao buscar leads: {e}")
+        return JSONResponse(content=[], status_code=500)
 
-# 2. ROTA PARA SALVAR AS MENSAGENS (POST)
-@app.post("/api/config/flow")
-async def api_config_flow(request: Request):
-    data = await request.json()
-    company_id = data.get("companyId")
-    messages_array = data.get("flow_messages", [])
+# ==========================================
+# 2. ROTA DE ATUALIZAR STATUS (Apenas PUT, lead_id e data)
+# ==========================================
 
-    if company_id == "MASTER":
-        return {"status": "ok"}
-
-    keys_map = [
-        "ask_name", "ask_email", "ask_product_first", "ask_cep",
-        "confirm_use_default_cep", "ask_other_cep", "ask_save_cep_as_default",
-        "ask_replace_default_cep", "final_reply"
-    ]
-    
-    new_messages = {}
-    for i, msg in enumerate(messages_array):
-        if i < len(keys_map):
-            new_messages[keys_map[i]] = msg
-
+@app.put("/api/leads/{lead_id}/status")
+async def update_lead_status(lead_id: int, data: StatusUpdate):
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("select settings from companies where id=%s", (company_id,))
-                row = cur.fetchone()
-                if not row: return JSONResponse(status_code=404, content={"error": "Empresa não encontrada"})
-                
-                settings = _safe_settings(row.get("settings"))
-                settings["messages"] = new_messages
-
-                cur.execute("update companies set settings = %s::jsonb where id=%s", (json.dumps(settings), company_id))
+                status_funil = data.status
+                status_bot = 'open' if status_funil == 'bot' else 'paused'
+                cur.execute(
+                    "UPDATE conversations SET status=%s, status_funil=%s, updated_at=NOW() WHERE id=%s",
+                    (status_bot, status_funil, lead_id)
+                )
             conn.commit()
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Erro ao salvar fluxo: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erro ao salvar."})
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.get("/api/messages/{company_id}/{phone}")
+def get_chat_history(company_id: str, phone: str):
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT direction, text, created_at FROM messages WHERE company_id=%s AND phone=%s ORDER BY created_at ASC", (company_id, phone))
+            return cur.fetchall()
 
 # ==========================================
-# CÓDIGO DO WEBHOOK (WHATSAPP)
+# MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
 # ==========================================
+
 @app.get("/webhook")
-async def webhook_verify(request: Request):
-    qp = request.query_params
-    if qp.get("hub.mode") == "subscribe" and qp.get("hub.verify_token") == VERIFY_TOKEN:
-        return PlainTextResponse(qp.get("hub.challenge"))
-    return JSONResponse(status_code=403, content={"error": "Verification failed"})
+async def verify(request: Request):
+    if request.query_params.get("hub.verify_token") == VERIFY_TOKEN:
+        return PlainTextResponse(request.query_params.get("hub.challenge"))
+    return "Erro"
 
 @app.post("/webhook/{company_id}")
-async def webhook_receive(company_id: str, request: Request):
-    # O código original de processamento de mensagens fica aqui
-    return {"status": "ok"}
+async def webhook(company_id: str, request: Request):
+    data = await request.json()
+    try:
+        entry = data['entry'][0]['changes'][0]['value']
+        if 'messages' not in entry: return {"status": "no messages"}
+        
+        msg = entry['messages'][0]
+        phone = msg['from']
+        text = msg.get('text', {}).get('body', '').strip()
 
-# ---------------------------
-# Inicializador do Render
-# ---------------------------
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # 1. Registrar Mensagem
+                cur.execute("INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
+                            (company_id, phone, 'inbound', text))
+                
+                # 2. Buscar Estado da Conversa
+                cur.execute("SELECT * FROM conversations WHERE company_id=%s AND phone=%s", (company_id, phone))
+                conv = cur.fetchone()
+                
+                if not conv:
+                    cur.execute("INSERT INTO conversations (company_id, phone, status_funil, step) VALUES (%s, %s, 'bot', 'nome') RETURNING *",
+                                (company_id, phone))
+                    conv = cur.fetchone()
+
+                # 3. Lógica de Perguntas (Steps) se o Bot estiver Ativo
+                if conv['status'] == 'open':
+                    steps = ['nome', 'email', 'produto', 'cep', 'confirm_cep', 'final']
+                    current_step = conv['step']
+                    
+                    # Salva o dado do cliente baseado no step anterior
+                    update_field = None
+                    if current_step == 'nome': update_field = "nome"
+                    elif current_step == 'email': update_field = "email"
+                    
+                    if update_field:
+                        cur.execute(f"UPDATE conversations SET {update_field}=%s WHERE id=%s", (text, conv['id']))
+
+                    # Avançar para o próximo step
+                    next_idx = steps.index(current_step) + 1 if current_step in steps else 0
+                    next_step = steps[next_idx] if next_idx < len(steps) else 'final'
+                    
+                    cur.execute("UPDATE conversations SET step=%s, updated_at=NOW() WHERE id=%s", (next_step, conv['id']))
+                
+            conn.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Erro Webhook: {e}")
+        return {"status": "error"}
+    
+@app.post("/api/send-message")
+async def api_send_message(request: Request):
+    data = await request.json()
+    company_id = data.get("companyId")
+    phone = data.get("phone")
+    text = data.get("text")
+
+    # 1. Buscar as credenciais da Meta no banco (Token e Phone ID)
+    # Aqui assumimos que você já tem essas configs ou usa as globais do .env
+    access_token = os.getenv("WHATSAPP_TOKEN")
+    phone_number_id = os.getenv("PHONE_NUMBER_ID")
+
+    if not access_token or not phone_number_id:
+        return JSONResponse(status_code=500, content={"error": "Configurações do WhatsApp ausentes"})
+
+    # 2. Disparar para a API da Meta
+    import requests
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone,
+        "type": "text",
+        "text": {"body": text}
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            # 3. Salvar a mensagem no seu banco para aparecer no histórico do chat
+            with db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
+                        (company_id, phone, 'outbound', text)
+                    )
+                conn.commit()
+            return {"status": "ok"}
+        else:
+            return JSONResponse(status_code=400, content=response.json())
+    except Exception as e:
+        logger.error(f"Erro ao disparar WhatsApp: {e}")
+        return JSONResponse(status_code=500, content={"error": "Falha ao enviar"})    
+
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
