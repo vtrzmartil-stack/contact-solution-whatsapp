@@ -63,15 +63,29 @@ def _safe_settings(value: Any) -> Dict[str, Any]:
 async def api_login(request: Request):
     data = await request.json()
     email, password = data.get("email"), data.get("password")
+    
+    # Login do Admin
     if email == "admin@solution.com" and password == "123":
         return {"companyId": "MASTER", "companyName": "Solution Admin", "role": "admin"}
     
+    # Login do Cliente
     hashed_pw = hash_password(password)
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, name FROM companies WHERE email=%s AND password=%s", (email, hashed_pw))
-            row = cur.fetchone()
-    if row: return {"companyId": row["id"], "companyName": row["name"], "role": "client"}
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, name FROM companies WHERE email=%s AND password=%s", (email, hashed_pw))
+                row = cur.fetchone()
+        
+        # Se encontrou o usuário, acessamos pelos índices 0 e 1
+        if row: 
+            return {
+                "companyId": str(row[0]), # Convertemos para String para evitar erro 422 no Front
+                "companyName": row[1], 
+                "role": "client"
+            }
+    except Exception as e:
+        print(f"Erro no login: {e}")
+        
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
 @app.get("/api/leads/{company_id}")
@@ -79,10 +93,27 @@ def api_get_leads(company_id: str):
     query = "SELECT * FROM conversations ORDER BY updated_at DESC" if company_id == "MASTER" else \
             "SELECT * FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
     params = () if company_id == "MASTER" else (company_id,)
-    with db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, params)
-            return cur.fetchall()
+    
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                # Transforma em lista de dicionários para o FastAPI não se confundir
+                leads = []
+                for row in rows:
+                    leads.append({
+                        "id": row[0],
+                        "company_id": row[1],
+                        "telefone": row[2],
+                        "status": row[3],
+                        "fase": row[4],
+                        "nome": row[5] if len(row) > 5 else "Lead"
+                    })
+                return leads
+    except Exception as e:
+        print(f"Erro ao buscar leads: {e}")
+        return []
 
 @app.put("/api/leads/{lead_id}/status")
 async def update_lead_status(lead_id: int, data: StatusUpdate):
