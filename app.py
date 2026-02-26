@@ -184,7 +184,37 @@ def get_chat_history(company_id: str, phone: str):
     except Exception as e:
         print(f"Erro ao buscar mensagens: {e}")
         return JSONResponse(content=[], status_code=500)
-    
+
+# Criamos o modelo de dados que o Frontend vai enviar
+class RegisterCompanyRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    bot_whatsapp: str
+    password: str
+
+@app.post("/api/admin/companies")
+async def register_company(data: RegisterCompanyRequest):
+    hashed_pw = hash_password(data.password)
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Verifica se o e-mail já existe para não dar erro duplicado
+                cur.execute("SELECT id FROM companies WHERE email = %s", (data.email,))
+                if cur.fetchone():
+                    return JSONResponse(status_code=400, content={"error": "E-mail já cadastrado!"})
+
+                # Insere a nova empresa no banco
+                cur.execute(
+                    "INSERT INTO companies (name, email, phone, bot_whatsapp, password, created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
+                    (data.name, data.email, data.phone, data.bot_whatsapp, hashed_pw)
+                )
+            conn.commit()
+        return {"status": "success", "message": "Empresa cadastrada com sucesso!"}
+    except Exception as e:
+        print(f"Erro ao cadastrar empresa: {e}")
+        return JSONResponse(status_code=500, content={"error": "Erro ao salvar no banco de dados"})
+
     # Criamos um modelo para o corpo da requisição
 class MessageSendRequest(BaseModel):
     company_id: str
