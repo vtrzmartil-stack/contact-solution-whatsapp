@@ -91,48 +91,36 @@ async def api_login(request: Request):
         
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
-@app.get("/api/leads/{company_id}")
+@app.get("/api/leads/{company_id}", response_model=None)
 async def api_get_leads(company_id: str):
-    # Forçamos o ID para String
     cid = str(company_id)
-    
-    # Selecionamos apenas campos de TEXTO para evitar erros de data/JSON
-    query = """
-        SELECT id, company_id, phone, status, fase, nome 
-        FROM conversations 
-        WHERE company_id = %s 
-        ORDER BY updated_at DESC
-    """
-    if cid == "MASTER":
-        query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC"
-        params = ()
-    else:
-        params = (cid,)
+    query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC" if cid == "MASTER" else \
+            "SELECT id, company_id, phone, status, fase, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+    params = () if cid == "MASTER" else (cid,)
     
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
-                
                 leads = []
                 for row in rows:
-                    # Usamos str() em tudo para garantir que o FastAPI aceite
                     leads.append({
                         "id": str(row[0]),
                         "company_id": str(row[1]),
                         "telefone": str(row[2]) if row[2] else "",
                         "status": str(row[3]) if row[3] else "open",
-                        "fase": str(row[4]) if row[4] else "novo",
+                        "status_funil": str(row[4]) if row[4] else "novo", # <-- Ajustei para status_funil que seu Front espera!
                         "nome": str(row[5]) if row[5] else "Lead"
                     })
-                
-                # Retorno direto como JSONResponse para pular a validação do FastAPI
                 return JSONResponse(content=leads)
-                
     except Exception as e:
-        print(f"ERRO CRÍTICO NO BACKEND: {e}")
+        print(f"Erro ao buscar leads: {e}")
         return JSONResponse(content=[], status_code=500)
+
+# ==========================================
+# 2. ROTA DE ATUALIZAR STATUS (Apenas PUT, lead_id e data)
+# ==========================================
 
 @app.put("/api/leads/{lead_id}/status")
 async def update_lead_status(lead_id: int, data: StatusUpdate):
