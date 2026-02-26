@@ -35,7 +35,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://contact-solution-whatsapp.vercel.app"
+        "https://contact-solution-whatsapp.vercel.app",
+        "https://contactsolution.com.br",
+        "https://www.contactsolution.com.br"
     ], 
     allow_origin_regex="https://.*\.vercel\.app", # Libera para qualquer subdomínio dinâmico da Vercel
     allow_credentials=True,
