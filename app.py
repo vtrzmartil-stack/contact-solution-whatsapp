@@ -63,13 +63,14 @@ def _safe_settings(value: Any) -> Dict[str, Any]:
 # ==========================================
 
 # ==========================================
-# 1. LOGIN (Voltando para nomes das colunas)
+# 1. LOGIN BLINDADO
 # ==========================================
 @app.post("/api/auth/login")
 async def api_login(request: Request):
     data = await request.json()
     email, password = data.get("email"), data.get("password")
     
+    # Bypass do Admin
     if email == "admin@solution.com" and password == "123":
         return {"companyId": "MASTER", "companyName": "Solution Admin", "role": "admin"}
     
@@ -81,10 +82,12 @@ async def api_login(request: Request):
                 row = cur.fetchone()
         
         if row: 
+            # Verifica automaticamente se o banco mandou um Dicionário ou uma Tupla
+            is_dict = isinstance(row, dict) or hasattr(row, 'keys')
+            
             return {
-                # Usamos .get() para acessar os dicionários com segurança
-                "companyId": str(row.get("id")), 
-                "companyName": row.get("name"), 
+                "companyId": str(row["id"] if is_dict else row[0]), 
+                "companyName": row["name"] if is_dict else row[1], 
                 "role": "client"
             }
     except Exception as e:
@@ -93,7 +96,7 @@ async def api_login(request: Request):
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
 # ==========================================
-# 2. BUSCAR LEADS (Ajustado para dicionários blindados)
+# 2. BUSCA DE LEADS BLINDADA
 # ==========================================
 @app.get("/api/leads/{company_id}", response_model=None)
 async def api_get_leads(company_id: str):
@@ -109,14 +112,16 @@ async def api_get_leads(company_id: str):
                 rows = cur.fetchall()
                 leads = []
                 for row in rows:
-                    # Usando row.get("nome_da_coluna") o sistema nunca mais vai quebrar
+                    # Verifica o formato de cada linha
+                    is_dict = isinstance(row, dict) or hasattr(row, 'keys')
+                    
                     leads.append({
-                        "id": str(row.get("id", "")),
-                        "company_id": str(row.get("company_id", "")),
-                        "telefone": str(row.get("phone", "")),
-                        "status": str(row.get("status", "open")),
-                        "status_funil": str(row.get("status_funil", "novo")), 
-                        "nome": str(row.get("nome", "Lead"))
+                        "id": str(row["id"] if is_dict else row[0]),
+                        "company_id": str(row["company_id"] if is_dict else row[1]),
+                        "telefone": str(row["phone"] if is_dict else (row[2] or "")),
+                        "status": str(row["status"] if is_dict else (row[3] or "open")),
+                        "status_funil": str(row["status_funil"] if is_dict else (row[4] or "novo")), 
+                        "nome": str(row["nome"] if is_dict else (row[5] or "Lead"))
                     })
                 return JSONResponse(content=leads)
     except Exception as e:
