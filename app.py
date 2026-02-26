@@ -15,6 +15,10 @@ load_dotenv()
 
 import psycopg
 from psycopg.rows import dict_row
+from pydantic import BaseModel
+
+class StatusUpdate(BaseModel):
+    status: str
 
 # ---------------------------
 # Logging & Env
@@ -249,6 +253,31 @@ def api_admin_delete_company(target_id: str):
 # ==========================================
 
 @app.get("/api/leads/{company_id}")
+@app.put("/api/leads/{lead_id}/status")
+async def update_lead_status(lead_id: int, data: StatusUpdate):
+    new_status = data.status
+    
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Lógica Inteligente de Kanban + Robô
+                if new_status == 'bot':
+                    # Volta para o bot: status volta a ser 'open'
+                    cur.execute(
+                        "UPDATE conversations SET status = 'open' WHERE id = %s", 
+                        (lead_id,)
+                    )
+                else:
+                    # Vai para negociação/concluída/perdida: pausa o bot e salva a coluna
+                    cur.execute(
+                        "UPDATE conversations SET status = 'paused', status_funil = %s WHERE id = %s", 
+                        (new_status, lead_id)
+                    )
+            conn.commit()
+        return {"status": "ok", "message": "Lead movido com sucesso!"}
+    except Exception as e:
+        logger.error(f"Erro ao atualizar status do lead {lead_id}: {e}")
+        return JSONResponse(status_code=500, content={"error": "Erro interno ao atualizar funil."})
 def api_get_leads(company_id: str):
     if company_id == "MASTER":
         query = "select * from conversations order by updated_at desc limit 100"

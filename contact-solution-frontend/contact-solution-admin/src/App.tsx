@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import './App.css';
 
 interface Lead {
@@ -24,7 +25,6 @@ function App() {
   const [adminCompanies, setAdminCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // NOVO: Estado que guarda as mensagens do bot para a empresa logada
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
@@ -94,7 +94,6 @@ function App() {
     finally { setLoading(false); }
   };
 
-  // NOVO: Busca as mensagens salvas no banco de dados
   const fetchFlowMessages = async () => {
     if (!session) return;
     setLoading(true);
@@ -110,7 +109,6 @@ function App() {
     finally { setLoading(false); }
   };
 
-  // ATUALIZADO: Agora envia o estado inteligente do React, não o HTML da tela
   const handleDeployFlow = async () => {
     if (!session) return;
     setLoading(true);
@@ -174,12 +172,45 @@ function App() {
     finally { setLoading(false); }
   };
 
-  // ATUALIZADO: O gatilho que avisa o React para buscar as mensagens quando você clica na aba
+  // ==========================================
+  // NOVO: LÓGICA DE ARRASTAR E SOLTAR (DRAG AND DROP)
+  // ==========================================
+  const onDragEnd = async (result: DropResult) => {
+    const { source, destination, draggableId } = result;
+
+    // Se o usuário soltar fora do Kanban, não faz nada
+    if (!destination) return;
+
+    // Se soltar exatamente onde já estava, não faz nada
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    // Pega o ID da coluna de destino (novo status)
+    const newStatus = destination.droppableId as Lead['status'];
+
+    // 1. Atualiza o visual da tela imediatamente (Optimistic UI) para não dar delay pro cliente
+    setLeads((prevLeads) => 
+      prevLeads.map((lead) => 
+        String(lead.id) === draggableId ? { ...lead, status: newStatus } : lead
+      )
+    );
+
+    // 2. Manda a alteração silenciosamente pro Backend (Render)
+    try {
+      await fetch(`${API_URL}/api/leads/${draggableId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+    } catch (error) {
+      console.error("Erro ao salvar o novo status no banco:", error);
+    }
+  };
+
   useEffect(() => {
     if (currentView === 'dashboard') {
       if (activeTab === 'leads') fetchLeads();
       if (activeTab === 'infra' && session?.role === 'admin') fetchAdminCompanies();
-      if (activeTab === 'flow') fetchFlowMessages(); // Puxa os dados ao abrir a aba
+      if (activeTab === 'flow') fetchFlowMessages();
     }
   }, [currentView, activeTab]);
 
@@ -234,7 +265,7 @@ function App() {
       {/* CONTEÚDO PRINCIPAL */}
       <main className="main-content" style={{ padding: '20px 40px' }}>
         
-        {/* ABA: LEADS (FUNIL KANBAN) */}
+        {/* ABA: LEADS (FUNIL KANBAN COM DRAG AND DROP) */}
         {activeTab === 'leads' && (
           <section style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -242,60 +273,105 @@ function App() {
               <button className="btn-primary" style={{ width: 'auto' }} onClick={fetchLeads}>Atualizar Funil</button>
             </div>
             
-            <div className="kanban-board">
-              <div className="kanban-column">
-                <div className="kanban-header" style={{ borderTop: '3px solid #3b82f6' }}>🤖 Robô Atendendo <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsBot.length}</span></div>
-                <div className="kanban-cards">
-                  {leadsBot.map((lead, idx) => (
-                    <div className="card" key={idx}>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Etapa {lead.fase || 1}/9</div>
-                      <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+            {/* O DragDropContext abraça todas as colunas */}
+            <DragDropContext onDragEnd={onDragEnd}>
+              <div className="kanban-board">
+                
+                {/* COLUNA: ROBÔ */}
+                <Droppable droppableId="bot">
+                  {(provided) => (
+                    <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #3b82f6' }}>🤖 Robô Atendendo <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsBot.length}</span></div>
+                      <div className="kanban-cards">
+                        {leadsBot.map((lead, idx) => (
+                          <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
+                            {(provided) => (
+                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Etapa {lead.fase || 1}/9</div>
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  )}
+                </Droppable>
 
-              <div className="kanban-column">
-                <div className="kanban-header" style={{ borderTop: '3px solid #eab308' }}>🗣️ Em Negociação <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsNegociacao.length}</span></div>
-                <div className="kanban-cards">
-                  {leadsNegociacao.map((lead, idx) => (
-                    <div className="card" key={idx}>
-                      <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                {/* COLUNA: NEGOCIAÇÃO */}
+                <Droppable droppableId="negociacao">
+                  {(provided) => (
+                    <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #eab308' }}>🗣️ Em Negociação <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsNegociacao.length}</span></div>
+                      <div className="kanban-cards">
+                        {leadsNegociacao.map((lead, idx) => (
+                          <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
+                            {(provided) => (
+                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  )}
+                </Droppable>
 
-              <div className="kanban-column">
-                <div className="kanban-header" style={{ borderTop: '3px solid #22c55e' }}>✅ Venda Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsConcluida.length}</span></div>
-                <div className="kanban-cards">
-                  {leadsConcluida.map((lead, idx) => (
-                    <div className="card" key={idx}>
-                      <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                {/* COLUNA: CONCLUÍDA */}
+                <Droppable droppableId="concluida">
+                  {(provided) => (
+                    <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #22c55e' }}>✅ Venda Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsConcluida.length}</span></div>
+                      <div className="kanban-cards">
+                        {leadsConcluida.map((lead, idx) => (
+                          <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
+                            {(provided) => (
+                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  )}
+                </Droppable>
 
-              <div className="kanban-column">
-                <div className="kanban-header" style={{ borderTop: '3px solid #ef4444' }}>❌ Não Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsPerdida.length}</span></div>
-                <div className="kanban-cards">
-                  {leadsPerdida.map((lead, idx) => (
-                    <div className="card" key={idx}>
-                      <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                {/* COLUNA: PERDIDA */}
+                <Droppable droppableId="perdida">
+                  {(provided) => (
+                    <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #ef4444' }}>❌ Não Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsPerdida.length}</span></div>
+                      <div className="kanban-cards">
+                        {leadsPerdida.map((lead, idx) => (
+                          <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
+                            {(provided) => (
+                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </Droppable>
+
               </div>
-            </div>
+            </DragDropContext>
           </section>
         )}
 
-        {/* ABA: FLUXO (ATUALIZADA PARA LER DO BANCO) */}
+        {/* ABA: FLUXO */}
         {activeTab === 'flow' && (
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
@@ -311,7 +387,6 @@ function App() {
                       <span>Pergunta {n}</span>
                       <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
                     </div>
-                    {/* A MÁGICA ACONTECE AQUI: value={flowMessages[idx]} */}
                     <textarea 
                       rows={2} 
                       placeholder={`Mensagem da etapa ${n}...`} 
@@ -329,7 +404,7 @@ function App() {
           </section>
         )}
 
-        {/* ABA: PERFIL (TROCAR SENHA) */}
+        {/* ABA: PERFIL */}
         {activeTab === 'profile' && (
           <section>
             <h2>Meu Perfil</h2>
@@ -344,7 +419,7 @@ function App() {
           </section>
         )}
 
-        {/* ABA: INFRAESTRUTURA (SÓ ADMIN VÊ) */}
+        {/* ABA: INFRAESTRUTURA */}
         {activeTab === 'infra' && session?.role === 'admin' && (
           <section>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
