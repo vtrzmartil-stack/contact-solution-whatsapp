@@ -5,6 +5,7 @@ import uuid
 import hashlib
 from datetime import datetime
 from typing import Any, Dict
+import requests
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -166,6 +167,53 @@ async def webhook(company_id: str, request: Request):
     except Exception as e:
         logger.error(f"Erro Webhook: {e}")
         return {"status": "error"}
+    
+@app.post("/api/send-message")
+async def api_send_message(request: Request):
+    data = await request.json()
+    company_id = data.get("companyId")
+    phone = data.get("phone")
+    text = data.get("text")
+
+    # 1. Buscar as credenciais da Meta no banco (Token e Phone ID)
+    # Aqui assumimos que você já tem essas configs ou usa as globais do .env
+    access_token = os.getenv("WHATSAPP_TOKEN")
+    phone_number_id = os.getenv("PHONE_NUMBER_ID")
+
+    if not access_token or not phone_number_id:
+        return JSONResponse(status_code=500, content={"error": "Configurações do WhatsApp ausentes"})
+
+    # 2. Disparar para a API da Meta
+    import requests
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": phone,
+        "type": "text",
+        "text": {"body": text}
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            # 3. Salvar a mensagem no seu banco para aparecer no histórico do chat
+            with db_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
+                        (company_id, phone, 'outbound', text)
+                    )
+                conn.commit()
+            return {"status": "ok"}
+        else:
+            return JSONResponse(status_code=400, content=response.json())
+    except Exception as e:
+        logger.error(f"Erro ao disparar WhatsApp: {e}")
+        return JSONResponse(status_code=500, content={"error": "Falha ao enviar"})    
 
 if __name__ == "__main__":
     import uvicorn

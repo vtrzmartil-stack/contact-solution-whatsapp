@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import './App.css';
 
+
 interface Lead {
   id: string;
   nome?: string;
@@ -17,14 +18,16 @@ interface UserSession {
 }
 
 function App() {
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [currentView, setCurrentView] = useState<'login' | 'dashboard'>('login');
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState('leads');
-  
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [adminCompanies, setAdminCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  
+
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
@@ -47,11 +50,11 @@ function App() {
         body: JSON.stringify({ email, password })
       });
       const data = await response.json();
-      if(response.ok) {
+      if (response.ok) {
         setSession({ companyId: data.companyId, companyName: data.companyName, role: data.role as 'admin' | 'client' });
         setCurrentView('dashboard');
       } else { alert(data.error || "Credenciais inválidas"); }
-    } catch (error) { alert("Erro de conexão."); } 
+    } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
   };
 
@@ -68,12 +71,12 @@ function App() {
         body: JSON.stringify(data)
       });
       const result = await response.json();
-      if(response.ok) {
+      if (response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
         e.currentTarget.reset();
         fetchAdminCompanies();
       } else { alert("Erro: " + result.error); }
-    } catch (error) { alert("Erro de conexão."); } 
+    } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
   };
 
@@ -90,7 +93,7 @@ function App() {
         }));
         setLeads(formatados);
       }
-    } catch (error) { console.error(error); } 
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
 
@@ -105,7 +108,7 @@ function App() {
           setFlowMessages(data.messages);
         }
       }
-    } catch (error) { console.error(error); } 
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
 
@@ -119,7 +122,7 @@ function App() {
         body: JSON.stringify({ companyId: session.companyId, flow_messages: flowMessages })
       });
       if (response.ok) alert("Fluxo salvo e atualizado!");
-    } catch (error) { alert("Erro ao salvar."); } 
+    } catch (error) { alert("Erro ao salvar."); }
     finally { setLoading(false); }
   };
 
@@ -127,7 +130,7 @@ function App() {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const novaSenha = formData.get('novaSenha') as string;
-    
+
     if (!session) return;
     setLoading(true);
     try {
@@ -140,7 +143,7 @@ function App() {
         alert("Senha alterada com sucesso!");
         e.currentTarget.reset();
       } else { alert("Erro ao alterar senha."); }
-    } catch (error) { alert("Erro de conexão."); } 
+    } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
   };
 
@@ -152,13 +155,13 @@ function App() {
         const data = await response.json();
         setAdminCompanies(data.companies || []);
       }
-    } catch (error) { console.error(error); } 
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
 
   const handleDeleteCompany = async (targetCompanyId: string) => {
     if (!window.confirm("Certeza absoluta que deseja apagar esta empresa? Todos os dados dela serão perdidos.")) return;
-    
+
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/admin/companies/${targetCompanyId}`, {
@@ -166,9 +169,9 @@ function App() {
       });
       if (response.ok) {
         alert("Empresa deletada com sucesso.");
-        fetchAdminCompanies(); 
+        fetchAdminCompanies();
       } else { alert("Erro ao deletar."); }
-    } catch (error) { alert("Erro de conexão."); } 
+    } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
   };
 
@@ -188,8 +191,8 @@ function App() {
     const newStatus = destination.droppableId as Lead['status'];
 
     // 1. Atualiza o visual da tela imediatamente (Optimistic UI) para não dar delay pro cliente
-    setLeads((prevLeads) => 
-      prevLeads.map((lead) => 
+    setLeads((prevLeads) =>
+      prevLeads.map((lead) =>
         String(lead.id) === draggableId ? { ...lead, status: newStatus } : lead
       )
     );
@@ -205,6 +208,42 @@ function App() {
       console.error("Erro ao salvar o novo status no banco:", error);
     }
   };
+
+  const openChat = async (lead: Lead) => {
+    setSelectedLead(lead);
+    try {
+      const response = await fetch(`${API_URL}/api/messages/${session?.companyId}/${lead.telefone}`);
+      if (response.ok) {
+        const data = await response.json();
+        setChatMessages(data);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar chat", error);
+    }
+  };
+
+useEffect(() => {
+  let interval: any;
+  if (selectedLead) {
+    interval = setInterval(() => {
+      fetch(`${API_URL}/api/messages/${session?.companyId}/${selectedLead.telefone}`)
+        .then(res => res.json())
+        .then(data => setChatMessages(data))
+        .catch(err => console.error("Erro na atualização rápida:", err));
+    }, 2000); 
+  }
+  return () => clearInterval(interval);
+}, [selectedLead, session?.companyId]);
+
+// SCROLL AUTOMÁTICO: Sempre que 'chatMessages' mudar, ele desce o scroll
+useEffect(() => {
+    // Busca a div que contém as mensagens
+    const chatBody = document.querySelector('.chat-body');
+    if (chatBody) {
+      // Define o topo do scroll como a altura total da div (vai para o fim)
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+  }, [chatMessages]);
 
   useEffect(() => {
     if (currentView === 'dashboard') {
@@ -245,26 +284,26 @@ function App() {
       <aside className="sidebar">
         <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', marginBottom: '10px' }}>ContactSolution</div>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '40px' }}>
-          Logado como: <br/><strong style={{color: '#fff'}}>{session?.companyName}</strong>
+          Logado como: <br /><strong style={{ color: '#fff' }}>{session?.companyName}</strong>
         </div>
 
         <nav style={{ flex: 1 }}>
           <div className={`nav-item ${activeTab === 'leads' ? 'active' : ''}`} onClick={() => setActiveTab('leads')}>📊 Funil de Vendas</div>
           <div className={`nav-item ${activeTab === 'flow' ? 'active' : ''}`} onClick={() => setActiveTab('flow')}>⚙️ Configurar Fluxo</div>
           <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>👤 Meu Perfil</div>
-          
+
           {session?.role === 'admin' && (
-            <div className={`nav-item ${activeTab === 'infra' ? 'active' : ''}`} onClick={() => setActiveTab('infra')} style={{marginTop: '20px', borderTop: '1px solid var(--border-line)', paddingTop: '15px'}}>
+            <div className={`nav-item ${activeTab === 'infra' ? 'active' : ''}`} onClick={() => setActiveTab('infra')} style={{ marginTop: '20px', borderTop: '1px solid var(--border-line)', paddingTop: '15px' }}>
               🏢 Controle Master
             </div>
           )}
         </nav>
-        <button className="btn-link" style={{ textAlign: 'left', color: '#ef4444' }} onClick={() => {setSession(null); setCurrentView('login');}}>Sair do Sistema</button>
+        <button className="btn-link" style={{ textAlign: 'left', color: '#ef4444' }} onClick={() => { setSession(null); setCurrentView('login'); }}>Sair do Sistema</button>
       </aside>
 
       {/* CONTEÚDO PRINCIPAL */}
       <main className="main-content" style={{ padding: '20px 40px' }}>
-        
+
         {/* ABA: LEADS (FUNIL KANBAN COM DRAG AND DROP) */}
         {activeTab === 'leads' && (
           <section style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -272,11 +311,11 @@ function App() {
               <h2>Funil de Vendas</h2>
               <button className="btn-primary" style={{ width: 'auto' }} onClick={fetchLeads}>Atualizar Funil</button>
             </div>
-            
+
             {/* O DragDropContext abraça todas as colunas */}
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="kanban-board">
-                
+
                 {/* COLUNA: ROBÔ */}
                 <Droppable droppableId="bot">
                   {(provided) => (
@@ -286,7 +325,17 @@ function App() {
                         {leadsBot.map((lead, idx) => (
                           <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
                             {(provided) => (
-                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
+                              <div
+                                className="card"
+                                onClick={() => openChat(lead)}
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{
+                                  ...provided.draggableProps.style,
+                                  cursor: 'pointer'
+                                }}
+                              >
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Etapa {lead.fase || 1}/9</div>
                                 <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
@@ -304,13 +353,20 @@ function App() {
                 <Droppable droppableId="negociacao">
                   {(provided) => (
                     <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
-                      <div className="kanban-header" style={{ borderTop: '3px solid #eab308' }}>🗣️ Em Negociação <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsNegociacao.length}</span></div>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #f59e0b' }}>🤝 Em Negociação <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsNegociacao.length}</span></div>
                       <div className="kanban-cards">
                         {leadsNegociacao.map((lead, idx) => (
                           <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
                             {(provided) => (
-                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
-                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                              <div
+                                className="card"
+                                onClick={() => openChat(lead)}
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{ ...provided.draggableProps.style, cursor: 'pointer' }}
+                              >
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
                               </div>
                             )}
@@ -326,13 +382,20 @@ function App() {
                 <Droppable droppableId="concluida">
                   {(provided) => (
                     <div className="kanban-column" ref={provided.innerRef} {...provided.droppableProps}>
-                      <div className="kanban-header" style={{ borderTop: '3px solid #22c55e' }}>✅ Venda Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsConcluida.length}</span></div>
+                      <div className="kanban-header" style={{ borderTop: '3px solid #10b981' }}>✅ Concluída <span style={{ background: '#334155', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>{leadsConcluida.length}</span></div>
                       <div className="kanban-cards">
                         {leadsConcluida.map((lead, idx) => (
                           <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
                             {(provided) => (
-                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
-                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                              <div
+                                className="card"
+                                onClick={() => openChat(lead)}
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{ ...provided.draggableProps.style, cursor: 'pointer' }}
+                              >
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
                               </div>
                             )}
@@ -353,8 +416,15 @@ function App() {
                         {leadsPerdida.map((lead, idx) => (
                           <Draggable key={String(lead.id)} draggableId={String(lead.id)} index={idx}>
                             {(provided) => (
-                              <div className="card" ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} style={{...provided.draggableProps.style}}>
-                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead'}</div>
+                              <div
+                                className="card"
+                                onClick={() => openChat(lead)}
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                style={{ ...provided.draggableProps.style, cursor: 'pointer' }}
+                              >
+                                <div style={{ fontWeight: 600 }}>{lead.nome || 'Lead s/ nome'}</div>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{lead.telefone}</div>
                               </div>
                             )}
@@ -368,6 +438,27 @@ function App() {
 
               </div>
             </DragDropContext>
+            {selectedLead && (
+              <div className="chat-overlay" onClick={() => setSelectedLead(null)}>
+                <div className="chat-modal" onClick={e => e.stopPropagation()}>
+                  <div className="chat-header">
+                    <div>
+                      <strong>{selectedLead.nome || 'Lead'}</strong>
+                      <div style={{ fontSize: '12px', opacity: 0.7 }}>{selectedLead.telefone}</div>
+                    </div>
+                    <button onClick={() => setSelectedLead(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '20px' }}>✕</button>
+                  </div>
+                  <div className="chat-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '20px', height: '400px', overflowY: 'auto', background: '#0f172a' }}>
+                    {chatMessages.map((msg, idx) => (
+                      <div key={idx} className={`chat-bubble ${msg.direction === 'inbound' ? 'received' : 'sent'}`}>
+                        {msg.text}
+                      </div>
+                    ))}
+                    {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5 }}>Sem mensagens.</p>}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -387,10 +478,10 @@ function App() {
                       <span>Pergunta {n}</span>
                       <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
                     </div>
-                    <textarea 
-                      rows={2} 
-                      placeholder={`Mensagem da etapa ${n}...`} 
-                      value={flowMessages[idx] || ''} 
+                    <textarea
+                      rows={2}
+                      placeholder={`Mensagem da etapa ${n}...`}
+                      value={flowMessages[idx] || ''}
                       onChange={(e) => {
                         const novasMensagens = [...flowMessages];
                         novasMensagens[idx] = e.target.value;
@@ -435,8 +526,8 @@ function App() {
                 <input type="tel" name="whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
                 <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}> 
-                    {loading ? 'Criando...' : 'Registrar Nova Empresa'} 
+                  <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}>
+                    {loading ? 'Criando...' : 'Registrar Nova Empresa'}
                   </button>
                 </div>
               </form>
