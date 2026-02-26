@@ -94,8 +94,9 @@ async def api_login(request: Request):
 @app.get("/api/leads/{company_id}", response_model=None)
 async def api_get_leads(company_id: str):
     cid = str(company_id)
-    query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC" if cid == "MASTER" else \
-            "SELECT id, company_id, phone, status, fase, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+    query = "SELECT id, company_id, phone, status, status_funil, nome FROM conversations ORDER BY updated_at DESC" if cid == "MASTER" else \
+            "SELECT id, company_id, phone, status, status_funil, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+            
     params = () if cid == "MASTER" else (cid,)
     
     try:
@@ -110,7 +111,7 @@ async def api_get_leads(company_id: str):
                         "company_id": str(row[1]),
                         "telefone": str(row[2]) if row[2] else "",
                         "status": str(row[3]) if row[3] else "open",
-                        "status_funil": str(row[4]) if row[4] else "novo", # <-- Ajustei para status_funil que seu Front espera!
+                        "status_funil": str(row[4]) if row[4] else "novo", 
                         "nome": str(row[5]) if row[5] else "Lead"
                     })
                 return JSONResponse(content=leads)
