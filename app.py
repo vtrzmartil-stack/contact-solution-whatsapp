@@ -91,13 +91,23 @@ async def api_login(request: Request):
         
     return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
 
-@app.get("/api/leads/{company_id}", response_model=None) # response_model=None evita o erro 422
+@app.get("/api/leads/{company_id}")
 async def api_get_leads(company_id: str):
-    # Forçamos a query com colunas explícitas para evitar erro de ordem
-    query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC" if company_id == "MASTER" else \
-            "SELECT id, company_id, phone, status, fase, nome FROM conversations WHERE company_id = %s ORDER BY updated_at DESC"
+    # Forçamos o ID para String
+    cid = str(company_id)
     
-    params = () if company_id == "MASTER" else (company_id,)
+    # Selecionamos apenas campos de TEXTO para evitar erros de data/JSON
+    query = """
+        SELECT id, company_id, phone, status, fase, nome 
+        FROM conversations 
+        WHERE company_id = %s 
+        ORDER BY updated_at DESC
+    """
+    if cid == "MASTER":
+        query = "SELECT id, company_id, phone, status, fase, nome FROM conversations ORDER BY updated_at DESC"
+        params = ()
+    else:
+        params = (cid,)
     
     try:
         with db_conn() as conn:
@@ -107,20 +117,21 @@ async def api_get_leads(company_id: str):
                 
                 leads = []
                 for row in rows:
+                    # Usamos str() em tudo para garantir que o FastAPI aceite
                     leads.append({
-                        "id": row[0],
+                        "id": str(row[0]),
                         "company_id": str(row[1]),
-                        "telefone": row[2],
-                        "status": row[3],
-                        "fase": row[4],
-                        "nome": row[5] if row[5] else "Lead"
+                        "telefone": str(row[2]) if row[2] else "",
+                        "status": str(row[3]) if row[3] else "open",
+                        "fase": str(row[4]) if row[4] else "novo",
+                        "nome": str(row[5]) if row[5] else "Lead"
                     })
                 
-                # Retornamos como JSONResponse direto para o FastAPI não tentar validar
+                # Retorno direto como JSONResponse para pular a validação do FastAPI
                 return JSONResponse(content=leads)
                 
     except Exception as e:
-        print(f"Erro ao buscar leads: {e}")
+        print(f"ERRO CRÍTICO NO BACKEND: {e}")
         return JSONResponse(content=[], status_code=500)
 
 @app.put("/api/leads/{lead_id}/status")
