@@ -406,6 +406,38 @@ def fix_database():
         return {"status": "Sucesso! O seu banco de dados foi atualizado com as novas colunas."}
     except Exception as e:
         return {"error": f"Erro ao atualizar banco: {str(e)}"}    
+    
+# ==========================================
+# EXCLUIR EMPRESA
+# ==========================================
+@app.delete("/api/admin/companies/{company_id}")
+def delete_company(company_id: str):
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM companies WHERE id = %s", (company_id,))
+            conn.commit()
+        return {"status": "success", "message": "Empresa excluída!"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# ==========================================
+# ATUALIZAR EMPRESA (EDITAR)
+# ==========================================
+@app.put("/api/admin/companies/{company_id}")
+async def update_company(company_id: str, data: RegisterCompanyRequest):
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE companies SET name=%s, email=%s, phone=%s, bot_whatsapp=%s 
+                       WHERE id=%s""",
+                    (data.name, data.email, data.phone, data.bot_whatsapp, company_id)
+                )
+            conn.commit()
+        return {"status": "success", "message": "Dados atualizados!"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
