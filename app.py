@@ -444,7 +444,7 @@ async def update_company(company_id: str, data: RegisterCompanyRequest):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.post("/api/auth/change-password") # No FastAPI usamos .post para ser mais direto
+@app.post("/api/auth/change-password") 
 async def update_password(request: Request):
     try:
         data = await request.json()
