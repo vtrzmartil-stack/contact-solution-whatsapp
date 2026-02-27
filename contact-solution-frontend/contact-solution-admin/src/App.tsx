@@ -246,16 +246,23 @@ function App() {
   };
 
   // 10. BUSCAR EMPRESAS NO ADMIN
-  const fetchAdminCompanies = async () => {
+const fetchAdminCompanies = async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/admin/companies`);
       if (response.ok) {
         const data = await response.json();
-        setAdminCompanies(data.companies || []);
+        
+        // 🔥 A MÁGICA ESTÁ AQUI NA LINHA DE BAIXO:
+        const listaDeEmpresas = Array.isArray(data) ? data : (data.companies || []);
+        
+        setAdminCompanies(listaDeEmpresas);
       }
-    } catch (error) { console.error(error); }
-    finally { setLoading(false); }
+    } catch (error) { 
+      console.error(error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
   // ==========================================
   // NOVO: LÓGICA DE ARRASTAR E SOLTAR (DRAG AND DROP)
