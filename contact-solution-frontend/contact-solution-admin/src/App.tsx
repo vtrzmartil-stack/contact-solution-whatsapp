@@ -602,7 +602,17 @@ useEffect(() => {
             </div>
           )}
         </nav>
-        <button className="btn-link" style={{ textAlign: 'left', color: '#ef4444' }} onClick={() => { setSession(null); setCurrentView('login'); }}>Sair do Sistema</button>
+        <button 
+  className="btn-link" 
+  style={{ textAlign: 'left', color: '#ef4444' }} 
+  onClick={() => { 
+    setSession(null); 
+    localStorage.removeItem('userSession'); // <--- ESSA LINHA DESTRÓI O CRACHÁ
+    setCurrentView('login'); 
+  }}
+>
+  Sair do Sistema
+</button>
       </aside>
 
       {/* CONTEÚDO PRINCIPAL */}
