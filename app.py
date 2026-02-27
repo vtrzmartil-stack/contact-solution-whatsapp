@@ -444,31 +444,33 @@ async def update_company(company_id: str, data: RegisterCompanyRequest):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-@app.post("/api/auth/change-password") 
+# --- ROTA DE SEGURANÇA: TROCA DE SENHA ---
+@app.post("/api/auth/change-password")
 async def update_password(request: Request):
     try:
+        # 1. Recebe os dados do React
         data = await request.json()
         new_password = data.get('password')
         user_email = data.get('email')
 
+        # 2. Validação simples
         if not new_password or not user_email:
-            return {"status": "error", "message": "E-mail ou senha ausentes."}, 400
+            return {"status": "error", "message": "Dados insuficientes para a troca."}, 400
 
-        # --- LÓGICA DE BANCO DE DADOS ---
-        # 1. Abrimos a conexão (ajuste conforme o nome da sua função de conexão)
-        with get_db_connection() as conn: 
-            with conn.cursor() as cursor:
-                # 2. Executamos o comando de atualização
-                cursor.execute(
+        # 3. Conecta no banco e atualiza
+        # Usando a função get_db_connection que definimos antes
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
                     "UPDATE users SET password = %s WHERE email = %s",
                     (new_password, user_email)
                 )
-                conn.commit() # Salva a mudança no banco
+                conn.commit()
 
-        return {"status": "success", "message": "Senha atualizada com sucesso!"}
+        return {"status": "success", "message": "Senha atualizada com sucesso! ✅"}
 
     except Exception as e:
-        print(f"Erro ao trocar senha: {e}") # Log para você ver no Render se algo falhar
+        print(f"❌ Erro na troca de senha: {str(e)}")
         return {"status": "error", "message": "Erro interno no servidor."}, 500
 if __name__ == "__main__":
     import uvicorn
