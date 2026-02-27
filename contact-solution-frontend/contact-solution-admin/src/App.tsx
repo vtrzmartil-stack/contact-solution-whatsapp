@@ -345,120 +345,131 @@ useEffect(() => {
 // ==========================================
   // RENDERIZAÇÃO DAS TELAS (PREMIUM DARK MODE)
   // ==========================================
+// ==========================================
+  // NOVA TELA HOME + LOGIN (SPLIT SCREEN)
+  // ==========================================
   if (currentView === 'login') {
+    // Definimos os estilos aqui dentro para facilitar a colagem
+    const inputStyle = {
+      width: '100%',
+      padding: '14px',
+      backgroundColor: '#0F172A',
+      border: '1px solid #334155',
+      borderRadius: '12px',
+      color: '#FFFFFF',
+      outline: 'none',
+      boxSizing: 'border-box' as 'border-box'
+    };
+
+    const buttonStyle = {
+      width: '100%',
+      padding: '16px',
+      backgroundColor: '#5A7FFF', // Technical Blue da sua marca
+      color: '#FFFFFF',
+      border: 'none',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: 'bold' as 'bold',
+      cursor: 'pointer',
+      boxShadow: '0 10px 15px -3px rgba(90, 127, 255, 0.3)',
+      marginTop: '10px',
+      transition: 'all 0.2s ease'
+    };
+
     return (
       <div style={{
         minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#0B1120', 
-        backgroundImage: 'radial-gradient(circle at top, #1E293B 0%, #0B1120 70%)',
+        backgroundColor: '#1A1A2E', // Primary Navy da sua marca
         fontFamily: "'Inter', sans-serif",
-        padding: '20px'
+        color: '#FFFFFF'
       }}>
+        
+        {/* LADO ESQUERDO: LOGIN */}
         <div style={{
-          width: '100%',
-          maxWidth: '400px',
-          backgroundColor: '#1E293B',
+          flex: '1',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           padding: '40px',
-          borderRadius: '16px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
-          border: '1px solid #334155',
-          textAlign: 'center'
+          zIndex: 2
         }}>
-          {/* LOGO E TÍTULO */}
-          <div style={{ marginBottom: '32px' }}>
-            <div style={{ 
-              fontSize: '28px', 
-              fontWeight: 'bold', 
-              color: '#FFFFFF', 
-              letterSpacing: '-0.5px',
-              marginBottom: '8px'
-            }}>
-              Contact<span style={{ color: '#3B82F6' }}>Solution</span>
+          <div style={{
+            width: '100%',
+            maxWidth: '400px',
+            backgroundColor: 'rgba(30, 41, 59, 0.5)', 
+            padding: '40px',
+            borderRadius: '24px',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            <div style={{ marginBottom: '32px', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0' }}>Acesso ao Sistema</h2>
+              <p style={{ color: '#94A3B8', fontSize: '14px' }}>Bem-vindo à Contact Solution</p>
             </div>
-            <p style={{ color: '#94A3B8', fontSize: '14px', margin: 0 }}>
-              Acesso Restrito ao Sistema
+
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>E-mail corporativo</label>
+                <input type="email" name="email" required placeholder="seu@email.com" style={inputStyle} />
+              </div>
+
+              <div style={{ textAlign: 'left' }}>
+                <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Senha</label>
+                <input type="password" name="password" required placeholder="••••••••" style={inputStyle} />
+              </div>
+
+              <button type="submit" disabled={loading} style={buttonStyle}>
+                {loading ? 'Autenticando...' : 'Entrar na Plataforma'}
+              </button>
+            </form>
+
+            <p style={{ marginTop: '30px', fontSize: '11px', color: '#64748B', textAlign: 'center' }}>
+              © 2026 Contact Solution SaaS. <br/>Tecnologia de ponta para conversões reais.
             </p>
           </div>
+        </div>
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* CAMPO E-MAIL */}
-            <div style={{ textAlign: 'left' }}>
-              <label style={{ display: 'block', color: '#94A3B8', fontSize: '13px', marginBottom: '8px', marginLeft: '4px' }}>
-                E-mail institucional
-              </label>
-              <input
-                type="email"
-                name="email"
-                placeholder="seu@email.com"
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  backgroundColor: '#0F172A',
-                  border: '1px solid #334155',
-                  borderRadius: '8px',
-                  color: '#FFFFFF',
-                  fontSize: '15px',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'border-color 0.2s'
-                }}
-              />
-            </div>
+        {/* LADO DIREITO: BRANDING (A parte bonita!) */}
+        <div style={{
+          flex: '1.2',
+          position: 'relative',
+          display: 'none' as 'none', // Isso esconde no celular
+          flexDirection: 'column' as 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          background: 'linear-gradient(135deg, #1A1A2E 0%, #002C3F 100%)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.05)'
+        }}>
+          {/* Media Query Manual para Desktop */}
+          <style>{`
+            @media (min-width: 1024px) {
+              div[style*="flex: 1.2"] { display: flex !important; }
+            }
+          `}</style>
 
-            {/* CAMPO SENHA */}
-            <div style={{ textAlign: 'left' }}>
-              <label style={{ display: 'block', color: '#94A3B8', fontSize: '13px', marginBottom: '8px', marginLeft: '4px' }}>
-                Senha de acesso
-              </label>
-              <input
-                type="password"
-                name="password"
-                placeholder="••••••••"
-                required
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  backgroundColor: '#0F172A',
-                  border: '1px solid #334155',
-                  borderRadius: '8px',
-                  color: '#FFFFFF',
-                  fontSize: '15px',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'border-color 0.2s'
-                }}
-              />
-            </div>
+          {/* EFEITO DE LUZ DE FUNDO */}
+          <div style={{
+            position: 'absolute',
+            width: '600px',
+            height: '600px',
+            background: 'radial-gradient(circle, rgba(90, 127, 255, 0.15) 0%, transparent 70%)',
+            zIndex: 1
+          }}></div>
 
-            {/* BOTÃO ENTRAR */}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '14px',
-                backgroundColor: '#2563EB',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                marginTop: '10px',
-                transition: 'filter 0.2s'
-              }}
-            >
-              {loading ? 'Autenticando...' : 'Entrar no Sistema'}
-            </button>
-          </form>
-
-          <div style={{ marginTop: '32px', borderTop: '1px solid #334155', paddingTop: '20px' }}>
-            <p style={{ color: '#64748B', fontSize: '12px' }}>
-              © 2026 Contact Solution. Todos os direitos reservados.
+          <div style={{ zIndex: 2, textAlign: 'center', padding: '0 40px' }}>
+            <img 
+              src="/logocontactsolution.jpg" 
+              alt="Logo" 
+              style={{ width: '280px', marginBottom: '30px', filter: 'drop-shadow(0 0 20px rgba(90, 127, 255, 0.3))' }} 
+            />
+            <h1 style={{ fontSize: '48px', fontWeight: '800', marginBottom: '16px', letterSpacing: '-1px' }}>
+              Potencialize suas <span style={{ color: '#5A7FFF' }}>Conexões</span>
+            </h1>
+            <p style={{ fontSize: '18px', color: '#94A3B8', maxWidth: '500px', lineHeight: '1.6' }}>
+              A solução SaaS completa para automação de atendimento e gestão de leads em alta escala.
             </p>
           </div>
         </div>
