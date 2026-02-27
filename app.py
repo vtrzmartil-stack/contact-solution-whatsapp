@@ -18,6 +18,7 @@ from psycopg.rows import dict_row
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import json
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -184,6 +185,62 @@ def get_chat_history(company_id: str, phone: str):
         print(f"Erro ao buscar mensagens: {e}")
         return JSONResponse(content=[], status_code=500)
 
+# Criamos o modelo de dados que o Frontend vai enviar
+class RegisterCompanyRequest(BaseModel):
+    name: str
+    email: str
+    phone: str
+    bot_whatsapp: str
+    password: str
+
+@app.post("/api/admin/companies")
+async def register_company(data: RegisterCompanyRequest):
+    hashed_pw = hash_password(data.password)
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Verifica se o e-mail já existe para não dar erro duplicado
+                cur.execute("SELECT id FROM companies WHERE email = %s", (data.email,))
+                if cur.fetchone():
+                    return JSONResponse(status_code=400, content={"error": "E-mail já cadastrado!"})
+
+                # Insere a nova empresa no banco
+                cur.execute(
+                    "INSERT INTO companies (name, email, phone, bot_whatsapp, password, created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
+                    (data.name, data.email, data.phone, data.bot_whatsapp, hashed_pw)
+                )
+            conn.commit()
+        return {"status": "success", "message": "Empresa cadastrada com sucesso!"}
+    except Exception as e:
+        print(f"Erro ao cadastrar empresa: {e}")
+        return JSONResponse(status_code=500, content={"error": "Erro ao salvar no banco de dados"})
+
+    # Criamos um modelo para o corpo da requisição
+class MessageSendRequest(BaseModel):
+    company_id: str
+    phone: str
+    text: str
+
+@app.post("/api/messages/send")
+async def send_message(payload: MessageSendRequest):
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Salva a mensagem no banco de dados
+                cur.execute(
+                    "INSERT INTO messages (company_id, phone, direction, text, created_at) VALUES (%s, %s, 'outbound', %s, NOW())",
+                    (payload.company_id, payload.phone, payload.text)
+                )
+            conn.commit()
+            
+        # ⚠️ NOTA: É aqui que no futuro você vai colocar o código 
+        # para disparar a mensagem real para a Evolution API / Z-API / etc.
+            
+        return {"status": "success", "message": "Mensagem salva com sucesso"}
+    except Exception as e:
+        print(f"Erro ao enviar mensagem: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 # ==========================================
 # MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
 # ==========================================
@@ -291,6 +348,39 @@ async def api_send_message(request: Request):
     except Exception as e:
         logger.error(f"Erro ao disparar WhatsApp: {e}")
         return JSONResponse(status_code=500, content={"error": "Falha ao enviar"})    
+    
+# ==========================================
+# BUSCAR LISTA DE EMPRESAS (Painel Admin)
+# ==========================================
+@app.get("/api/admin/companies")
+async def get_all_companies():
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Busca as empresas (não trazemos a senha por segurança)
+                cur.execute("SELECT id, name, email, phone, bot_whatsapp, created_at FROM companies ORDER BY created_at DESC")
+                rows = cur.fetchall()
+                
+                if not rows:
+                    return JSONResponse(content=[])
+
+                colunas = [desc[0] for desc in cur.description]
+                
+                companies = []
+                for row in rows:
+                    d = dict(row) if isinstance(row, dict) or hasattr(row, 'keys') else dict(zip(colunas, row))
+                    companies.append({
+                        "id": str(d.get("id", "")),
+                        "name": str(d.get("name", "")),
+                        "email": str(d.get("email", "")),
+                        "phone": str(d.get("phone", "")),
+                        "bot_whatsapp": str(d.get("bot_whatsapp", "")),
+                        "created_at": str(d.get("created_at", ""))
+                    })
+                return JSONResponse(content=companies)
+    except Exception as e:
+        print(f"Erro ao buscar empresas: {e}")
+        return JSONResponse(content=[], status_code=500)    
 
 if __name__ == "__main__":
     import uvicorn

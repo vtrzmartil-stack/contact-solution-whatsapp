@@ -31,6 +31,8 @@ function App() {
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
+  
+  const [newMessage, setNewMessage] = useState("");
 
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
@@ -63,21 +65,60 @@ function App() {
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
 
-    setLoading(true);
+setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
+      // 🎯 CORREÇÃO: Apontando para a rota certa do Backend
+      const response = await fetch(`${API_URL}/api/admin/companies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      
       const result = await response.json();
+      
       if (response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
         e.currentTarget.reset();
-        fetchAdminCompanies();
-      } else { alert("Erro: " + result.error); }
-    } catch (error) { alert("Erro de conexão."); }
-    finally { setLoading(false); }
+        fetchAdminCompanies(); // Isso aqui vai recarregar a tabela na hora!
+      } else { 
+        alert("Erro: " + result.error); 
+      }
+    } catch (error) { 
+      alert("Erro de conexão."); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !selectedLead) return;
+
+    // Cria uma mensagem temporária para aparecer na tela na mesma hora!
+    const tempMsg = { direction: 'outbound', text: newMessage, created_at: new Date().toISOString() };
+    setChatMessages(prev => [...prev, tempMsg]);
+    
+    const textToSend = newMessage;
+    setNewMessage(""); // Limpa o campo de texto
+
+    try {
+      // CORREÇÃO 1: Trocamos API_BASE_URL por API_URL
+      const response = await fetch(`${API_URL}/api/messages/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // CORREÇÃO 2: Colocamos (as any) para o TypeScript não reclamar
+          company_id: (selectedLead as any).company_id,
+          phone: selectedLead.telefone,
+          text: textToSend
+        })
+      });
+
+      if (!response.ok) {
+        console.error("Falha ao salvar a mensagem no banco");
+      }
+    } catch (error) {
+      console.error("Erro de rede:", error);
+    }
   };
 
   const fetchLeads = async () => {
@@ -462,22 +503,35 @@ useEffect(() => {
                   
                   {/* CORPO DAS MENSAGENS */}
                   <div className="chat-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '20px', overflowY: 'auto', background: '#0f172a', flex: 1 }}>
-                    {chatMessages.map((msg, idx) => (
-                      <div key={idx} className={`chat-bubble ${msg.direction === 'inbound' ? 'received' : 'sent'}`}>
-                        {msg.text}
-                      </div>
-                    ))}
+                    {chatMessages.map((msg, idx) => {
+                      // Verifica se é 'in' ou 'inbound' para tratar como recebida do cliente
+                      const isReceived = msg.direction === 'in' || msg.direction === 'inbound';
+                      
+                      return (
+                        <div key={idx} className={`chat-bubble ${isReceived ? 'received' : 'sent'}`}>
+                          {msg.text}
+                        </div>
+                      );
+                    })}
                     {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>Sem mensagens.</p>}
                   </div>
 
-                  {/* RODAPÉ COM O TECLADO E BOTÃO DE ENVIAR */}
+                  {/* RODAPÉ COM TECLADO E BOTÃO ATIVOS */}
                   <div className="chat-footer" style={{ display: 'flex', padding: '15px', background: '#1e293b', borderTop: '1px solid #334155' }}>
                     <input 
                       type="text" 
-                      placeholder="Digite sua mensagem..." 
+                      placeholder="Digite a sua mensagem..." 
                       style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #475569', background: '#0f172a', color: 'white', outline: 'none', marginRight: '10px' }}
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          sendMessage();
+                        }
+                      }}
                     />
                     <button 
+                      onClick={sendMessage}
                       style={{ padding: '0 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
                       onMouseOver={(e) => e.currentTarget.style.background = '#1d4ed8'}
                       onMouseOut={(e) => e.currentTarget.style.background = '#2563eb'}
@@ -549,19 +603,27 @@ useEffect(() => {
             </div>
 
             <div className="card" style={{ marginBottom: '40px', borderLeft: '4px solid #22c55e' }}>
-              <h3 style={{ marginTop: 0, marginBottom: '20px' }}>➕ Cadastrar Novo Cliente</h3>
-              <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                <input type="text" name="companyName" placeholder="Nome da Empresa" className="input-field" required />
-                <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
-                <input type="tel" name="whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
-                <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}>
-                    {loading ? 'Criando...' : 'Registrar Nova Empresa'}
-                  </button>
-                </div>
-              </form>
+          <h3 style={{ marginTop: 0, marginBottom: '20px' }}>✨ Cadastrar Novo Cliente</h3>
+          <form onSubmit={handleRegister} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            
+            {/* Nomes corrigidos para bater EXATAMENTE com o Backend */}
+            <input type="text" name="name" placeholder="Nome da Empresa" className="input-field" required />
+            <input type="email" name="email" placeholder="E-mail administrador" className="input-field" required />
+            
+            {/* Campo novo que o Python exige: */}
+            <input type="tel" name="phone" placeholder="Telefone da Empresa" className="input-field" required />
+            
+            <input type="tel" name="bot_whatsapp" placeholder="WhatsApp do Bot" className="input-field" required />
+            <input type="password" name="password" placeholder="Crie uma senha provisória" className="input-field" required />
+            
+            {/* BOTÃO E FECHAMENTOS QUE ESTAVAM FALTANDO */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <button type="submit" className="btn-primary" disabled={loading} style={{ width: '250px' }}>
+                {loading ? 'Criando...' : 'Registrar Nova Empresa'}
+              </button>
             </div>
+          </form>
+        </div>
 
             <h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
             <div className="grid-container">
