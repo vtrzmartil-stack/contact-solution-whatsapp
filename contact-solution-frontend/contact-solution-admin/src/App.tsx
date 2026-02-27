@@ -484,11 +484,36 @@ useEffect(() => {
 
   return (
     <div className="app-layout">
-      {/* MENU LATERAL */}
-      <aside className="sidebar">
-        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff', marginBottom: '10px' }}>ContactSolution</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '40px' }}>
-          Logado como: <br /><strong style={{ color: '#fff' }}>{session?.companyName}</strong>
+{/* MENU LATERAL (REESTILIZADO) */}
+      <aside className="sidebar" style={{ backgroundColor: '#1A1A2E', borderRight: '1px solid #334155' }}>
+        <div style={{ padding: '20px', textAlign: 'center', marginBottom: '10px' }}>
+          {/* LOGO OFICIAL NO MENU */}
+          <img 
+            src="/logocontactsolution.png" 
+            alt="Logo" 
+            style={{ width: '100%', maxWidth: '140px', height: 'auto' }} 
+          />
+          <div style={{ 
+            height: '1px', 
+            background: 'linear-gradient(90deg, transparent, #5A7FFF, transparent)', 
+            marginTop: '20px',
+            opacity: 0.5 
+          }}></div>
+        </div>
+
+        <div style={{ padding: '0 20px 30px', fontSize: '12px', color: '#94A3B8', textAlign: 'center' }}>
+          Logado como: <br />
+          <strong style={{ color: '#FFFFFF', fontSize: '13px' }}>{session?.companyName}</strong>
+          <div style={{ 
+            marginTop: '5px', 
+            color: '#5A7FFF', 
+            fontWeight: 'bold', 
+            textTransform: 'uppercase',
+            fontSize: '10px',
+            letterSpacing: '1px'
+          }}>
+            {session?.role === 'admin' ? '🛡️ Master Admin' : '👤 Painel Cliente'}
+          </div>
         </div>
 
         <nav style={{ flex: 1 }}>
