@@ -38,6 +38,7 @@ function App() {
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
   // ==========================================
 
+// 1. LOGIN
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -60,26 +61,24 @@ function App() {
     finally { setLoading(false); }
   };
 
+  // 2. REGISTRAR EMPRESA (Agora montada e unida de novo!)
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setLoading(true);
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
 
-setLoading(true);
     try {
-      // 🎯 CORREÇÃO: Apontando para a rota certa do Backend
       const response = await fetch(`${API_URL}/api/admin/companies`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
-      
       const result = await response.json();
-      
       if (response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
         e.currentTarget.reset();
-        fetchAdminCompanies(); // Isso aqui vai recarregar a tabela na hora!
+        fetchAdminCompanies(); 
       } else { 
         alert("Erro: " + result.error); 
       }
@@ -90,23 +89,69 @@ setLoading(true);
     }
   };
 
+  // 3. APAGAR EMPRESA
+  const handleDeleteCompany = async (id: string) => {
+    if (!window.confirm("⚠️ ATENÇÃO: Isso apagará a empresa e todos os dados dela. Continuar?")) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/admin/companies/${id}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        alert("Empresa removida com sucesso!");
+        fetchAdminCompanies();
+      } else {
+        alert("Erro ao remover empresa.");
+      }
+    } catch (error) {
+      alert("Erro de conexão com o servidor.");
+    }
+  };
+
+  // 4. EDITAR EMPRESA
+  const handleEditCompany = async (empresa: any) => {
+    const novoNome = prompt("Novo nome da empresa:", empresa.name);
+    const novoBot = prompt("Novo WhatsApp do Bot:", empresa.bot_whatsapp);
+
+    if (novoNome && novoBot) {
+      try {
+        const response = await fetch(`${API_URL}/api/admin/companies/${empresa.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: novoNome,
+            email: empresa.email,
+            phone: empresa.phone,
+            bot_whatsapp: novoBot,
+            password: "" 
+          })
+        });
+
+        if (response.ok) {
+          alert("Dados atualizados!");
+          fetchAdminCompanies();
+        }
+      } catch (error) {
+        alert("Erro ao atualizar.");
+      }
+    }
+  };
+
+  // 5. ENVIAR MENSAGEM
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedLead) return;
 
-    // Cria uma mensagem temporária para aparecer na tela na mesma hora!
     const tempMsg = { direction: 'outbound', text: newMessage, created_at: new Date().toISOString() };
     setChatMessages(prev => [...prev, tempMsg]);
     
     const textToSend = newMessage;
-    setNewMessage(""); // Limpa o campo de texto
+    setNewMessage(""); 
 
     try {
-      // CORREÇÃO 1: Trocamos API_BASE_URL por API_URL
       const response = await fetch(`${API_URL}/api/messages/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // CORREÇÃO 2: Colocamos (as any) para o TypeScript não reclamar
           company_id: (selectedLead as any).company_id,
           phone: selectedLead.telefone,
           text: textToSend
@@ -121,6 +166,7 @@ setLoading(true);
     }
   };
 
+  // 6. BUSCAR LEADS
   const fetchLeads = async () => {
     if (!session) return;
     setLoading(true);
@@ -138,6 +184,7 @@ setLoading(true);
     finally { setLoading(false); }
   };
 
+  // 7. BUSCAR MENSAGENS DO FLUXO
   const fetchFlowMessages = async () => {
     if (!session) return;
     setLoading(true);
@@ -153,6 +200,7 @@ setLoading(true);
     finally { setLoading(false); }
   };
 
+  // 8. SALVAR FLUXO
   const handleDeployFlow = async () => {
     if (!session) return;
     setLoading(true);
@@ -167,6 +215,7 @@ setLoading(true);
     finally { setLoading(false); }
   };
 
+  // 9. TROCAR SENHA
   const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -188,6 +237,7 @@ setLoading(true);
     finally { setLoading(false); }
   };
 
+  // 10. BUSCAR EMPRESAS NO ADMIN
   const fetchAdminCompanies = async () => {
     setLoading(true);
     try {
@@ -199,23 +249,6 @@ setLoading(true);
     } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
-
-  const handleDeleteCompany = async (targetCompanyId: string) => {
-    if (!window.confirm("Certeza absoluta que deseja apagar esta empresa? Todos os dados dela serão perdidos.")) return;
-
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/admin/companies/${targetCompanyId}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        alert("Empresa deletada com sucesso.");
-        fetchAdminCompanies();
-      } else { alert("Erro ao deletar."); }
-    } catch (error) { alert("Erro de conexão."); }
-    finally { setLoading(false); }
-  };
-
   // ==========================================
   // NOVO: LÓGICA DE ARRASTAR E SOLTAR (DRAG AND DROP)
   // ==========================================
@@ -625,16 +658,31 @@ useEffect(() => {
           </form>
         </div>
 
-            <h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
+<h3 style={{ marginBottom: '20px' }}>🏢 Empresas Ativas no Sistema</h3>
             <div className="grid-container">
               {adminCompanies.map((empresa, idx) => (
                 <div className="card" key={idx} style={{ borderLeft: '4px solid var(--btn-blue)' }}>
                   <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>{empresa.name}</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '4px' }}>E-mail: {empresa.email}</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>ID: {empresa.id}</div>
-                  <button onClick={() => handleDeleteCompany(empresa.id)} style={{ width: '100%', background: '#ef4444', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                    Apagar Empresa
-                  </button>
+                  
+                  {/* BOTOES DE AÇÃO LADO A LADO */}
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button 
+                      onClick={() => handleEditCompany(empresa)} 
+                      style={{ flex: 1, background: '#3b82f6', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      Editar
+                    </button>
+                    
+                    <button 
+                      onClick={() => handleDeleteCompany(empresa.id)} 
+                      style={{ flex: 1, background: '#ef4444', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      Apagar
+                    </button>
+                  </div>
+
                 </div>
               ))}
               {adminCompanies.length === 0 && <p style={{ color: 'var(--text-muted)' }}>Nenhuma empresa encontrada no banco.</p>}
