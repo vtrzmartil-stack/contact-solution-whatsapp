@@ -232,30 +232,51 @@ function App() {
   // 9. TROCAR SENHA
   const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
+  
+  // RASTREADOR 1: O botão chamou a função?
+  console.log("🚀 1. Botão clicado! Iniciando função...");
+
   const formData = new FormData(e.currentTarget);
-  const password = formData.get('novaSenha') as string; // Pegamos o valor do input
+  const password = formData.get('novaSenha') as string;
+  
+  // RASTREADOR 2: Conseguiu ler o que você digitou?
+  console.log("🔑 2. Senha capturada do input:", password ? "Sim (tem texto)" : "Vazio/Falhou");
+  
+  // RASTREADOR 3: O que tem dentro da sessão neste exato momento?
+  console.log("👤 3. Dados da Sessão atual:", session);
 
-  if (!session?.email) return; // Segurança: precisamos do e-mail para atualizar
+  if (!session?.email) {
+    // RASTREADOR 4: A parede invisível!
+    console.error("❌ 4. PAREDE INVISÍVEL: O e-mail sumiu da sessão!");
+    alert("Erro: O sistema não achou seu e-mail. Por favor, saia e faça login de novo.");
+    return;
+  }
 
+  console.log("✅ 5. E-mail confirmado:", session.email, "- Enviando para o servidor...");
   setLoading(true);
+
   try {
     const response = await fetch(`${API_URL}/api/auth/change-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        password: password, // O Python espera 'password'
-        email: session.email // O Python espera 'email'
+        password: password, 
+        email: session.email 
       }),
     });
+
+    console.log("📡 6. Resposta do servidor:", response.status);
 
     if (response.ok) {
       alert("Senha alterada com sucesso! ✅");
       (e.target as HTMLFormElement).reset();
     } else {
       const errorData = await response.json();
+      console.error("⚠️ 7. Servidor recusou:", errorData);
       alert("Erro ao alterar: " + (errorData.message || "Erro desconhecido"));
     }
   } catch (error) {
+    console.error("🚨 8. Erro de rede (Caiu no Catch):", error);
     alert("Erro de conexão com o servidor.");
   } finally {
     setLoading(false);
