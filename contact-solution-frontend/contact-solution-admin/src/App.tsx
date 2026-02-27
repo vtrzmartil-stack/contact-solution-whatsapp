@@ -342,6 +342,34 @@ useEffect(() => {
     }
   }, [currentView, activeTab]);
 
+  // ==========================================
+  // CONFIGURAÇÕES VISUAIS DO CRM (BRANDING)
+  // ==========================================
+  const crmCardStyle = {
+    backgroundColor: '#1E293B',
+    padding: '20px',
+    borderRadius: '16px',
+    border: '1px solid #334155',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px'
+  };
+
+  const labelStyle = { color: '#94A3B8', fontSize: '13px', fontWeight: '500' };
+  const valueStyle = { color: '#FFFFFF', fontSize: '28px', fontWeight: '800' };
+  const subLabelStyle = { fontSize: '10px', fontWeight: 'bold' as const, textTransform: 'uppercase' as const, marginTop: '4px' };
+
+  const statusBadgeStyle = (color: string) => ({
+    backgroundColor: color,
+    padding: '8px 16px',
+    borderRadius: '20px',
+    color: '#FFFFFF',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap' as const,
+    border: '1px solid rgba(255,255,255,0.1)'
+  });
 // ==========================================
   // RENDERIZAÇÃO DAS TELAS (PREMIUM DARK MODE)
   // ==========================================
@@ -536,11 +564,90 @@ useEffect(() => {
         {/* ABA: LEADS (FUNIL KANBAN COM DRAG AND DROP) */}
         {activeTab === 'leads' && (
           <section style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2>Funil de Vendas</h2>
-              <button className="btn-primary" style={{ width: 'auto' }} onClick={fetchLeads}>Atualizar Funil</button>
+            Exatamente esse bloco, Vitor! Você matou a charada.
+
+Ao apagar apenas esse div (que é o cabeçalho antigo e simples), você abre espaço para o "painel de comando" do seu CRM, sem quebrar a funcionalidade de arrastar os leads lá embaixo.
+
+🛠️ O que colar nesse lugar:
+Apague essas 4 linhas que você mandou e cole este código completo no lugar:
+
+TypeScript
+            {/* 1. CABEÇALHO REESTILIZADO */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '30px' }}>
+              <div>
+                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#FFFFFF', margin: 0, letterSpacing: '-0.5px' }}>
+                  Gestão de Leads
+                </h1>
+                <p style={{ color: '#94A3B8', fontSize: '14px', marginTop: '4px' }}>
+                  Controle sua escala e conversão em tempo real.
+                </p>
+              </div>
+              <button 
+                onClick={fetchLeads}
+                style={{
+                  backgroundColor: '#1E293B',
+                  color: '#5A7FFF',
+                  border: '1px solid #334155',
+                  padding: '10px 20px',
+                  borderRadius: '12px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {loading ? 'Sincronizando...' : '🔄 Atualizar Funil'}
+              </button>
             </div>
 
+            {/* 2. CARDS DE MÉTRICAS (A INTELIGÊNCIA DO CRM) */}
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gap: '20px', 
+              marginBottom: '35px' 
+            }}>
+              <div style={crmCardStyle}>
+                <div style={labelStyle}>Base Total</div>
+                <div style={valueStyle}>{leads.length}</div>
+                <div style={{ ...subLabelStyle, color: '#5A7FFF' }}>👥 Leads captados</div>
+              </div>
+
+              <div style={crmCardStyle}>
+                <div style={labelStyle}>Novos (Hoje)</div>
+                <div style={valueStyle}>
+                  {leads.filter((l: any) => (l.createdAt || l.created_at) && new Date(l.createdAt || l.created_at).toDateString() === new Date().toDateString()).length}
+                </div>
+                <div style={{ ...subLabelStyle, color: '#10B981' }}>⚡ Escala diária</div>
+              </div>
+
+              <div style={crmCardStyle}>
+                <div style={labelStyle}>Em Negociação</div>
+                <div style={valueStyle}>{leads.filter(l => l.status === 'negociacao').length}</div>
+                <div style={{ ...subLabelStyle, color: '#F59E0B' }}>💬 No funil</div>
+              </div>
+
+              <div style={crmCardStyle}>
+                <div style={labelStyle}>Conversão</div>
+                <div style={valueStyle}>
+                  {leads.length > 0 ? ((leads.filter(l => l.status === 'concluida').length / leads.length) * 100).toFixed(1) : 0}%
+                </div>
+                <div style={{ ...subLabelStyle, color: '#A855F7' }}>🎯 Eficiência</div>
+              </div>
+            </div>
+
+{/* 3. RÉGUA DE STATUS (FLUXO DO FUNIL) */}
+            <div style={{ 
+              display: 'flex', 
+              gap: '12px', 
+              marginBottom: '30px',
+              overflowX: 'auto',
+              paddingBottom: '10px'
+            }}>
+              <div style={statusBadgeStyle('#334155')}>🤖 Robô: {leads.filter((l: any) => l.status === 'bot').length}</div>
+              <div style={statusBadgeStyle('#2563EB')}>🤝 Comercial: {leads.filter((l: any) => l.status === 'negociacao').length}</div>
+              <div style={statusBadgeStyle('#10B981')}>✅ Fechados: {leads.filter((l: any) => l.status === 'concluida').length}</div>
+              <div style={statusBadgeStyle('#EF4444')}>❌ Perdeu: {leads.filter((l: any) => l.status === 'perdida').length}</div>
+            </div>
             {/* O DragDropContext abraça todas as colunas */}
             <DragDropContext onDragEnd={onDragEnd}>
               <div className="kanban-board">
