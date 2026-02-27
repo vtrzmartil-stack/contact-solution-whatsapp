@@ -366,9 +366,15 @@ useEffect(() => {
     borderRadius: '20px',
     color: '#FFFFFF',
     fontSize: '12px',
-    fontWeight: 'bold',
+    fontWeight: 'bold' as const,
     whiteSpace: 'nowrap' as const,
-    border: '1px solid rgba(255,255,255,0.1)'
+    border: '1px solid rgba(255,255,255,0.1)',
+    display: 'flex',          // Fundamental para alinhar
+    alignItems: 'center',      // Centraliza verticalmente
+    justifyContent: 'center',   // Centraliza horizontalmente
+    gap: '8px',                // Espaço entre o emoji e o texto
+    lineHeight: '1',           // Evita que o texto "suba" ou "desça"
+    minWidth: '130px'          // Garante que todas tenham um tamanho harmonioso
   });
 // ==========================================
   // RENDERIZAÇÃO DAS TELAS (PREMIUM DARK MODE)
