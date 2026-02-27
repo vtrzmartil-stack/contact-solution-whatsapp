@@ -399,13 +399,16 @@ def fix_database():
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                # Adiciona as colunas novas caso elas não existam
+                # Colunas antigas que já adicionamos
                 cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS phone VARCHAR(50);")
                 cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS bot_whatsapp VARCHAR(50);")
+                
+                # 🔥 A NOVA GAVETA QUE ESTAVA FALTANDO:
+                cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';")
             conn.commit()
-        return {"status": "Sucesso! O seu banco de dados foi atualizado com as novas colunas."}
+        return {"status": "Sucesso! O seu banco de dados foi atualizado com as novas colunas (incluindo o status)."}
     except Exception as e:
-        return {"error": f"Erro ao atualizar banco: {str(e)}"}    
+        return {"error": f"Erro ao atualizar banco: {str(e)}"}   
     
 # ==========================================
 # EXCLUIR EMPRESA
