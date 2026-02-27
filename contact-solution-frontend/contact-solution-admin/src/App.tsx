@@ -461,7 +461,7 @@ useEffect(() => {
 
           <div style={{ zIndex: 2, textAlign: 'center', padding: '0 40px' }}>
             <img 
-              src="/logocontactsolution.jpg" 
+              src="/logocontactsolution.png" 
               alt="Logo" 
               style={{ width: '280px', marginBottom: '30px', filter: 'drop-shadow(0 0 20px rgba(90, 127, 255, 0.3))' }} 
             />
