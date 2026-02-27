@@ -61,11 +61,15 @@ function App() {
     finally { setLoading(false); }
   };
 
-  // 2. REGISTRAR EMPRESA (Agora montada e unida de novo!)
+// 2. REGISTRAR EMPRESA (Livre de fantasmas!)
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    
+    // 🔥 O SEGREDO: Salvar o formulário na memória antes de qualquer "await"
+    const form = e.currentTarget; 
+    
     setLoading(true);
-    const formData = new FormData(e.currentTarget);
+    const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
 
     try {
@@ -74,16 +78,20 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      
       const result = await response.json();
+      
       if (response.ok) {
         alert("Empresa registrada com sucesso no sistema!");
-        e.currentTarget.reset();
+        form.reset(); // Agora ele vai limpar perfeitamente
         fetchAdminCompanies(); 
       } else { 
         alert("Erro: " + result.error); 
       }
     } catch (error) { 
-      alert("Erro de conexão."); 
+      // Mudamos o texto para ficar mais claro caso ocorra um erro real
+      console.error(error); 
+      alert("Erro ao processar o formulário."); 
     } finally { 
       setLoading(false); 
     }
