@@ -15,6 +15,7 @@ interface UserSession {
   companyId: string;
   companyName: string;
   role: 'admin' | 'client';
+  email: string;
 }
 
 function App() {
@@ -54,7 +55,12 @@ function App() {
       });
       const data = await response.json();
       if (response.ok) {
-        setSession({ companyId: data.companyId, companyName: data.companyName, role: data.role as 'admin' | 'client' });
+        setSession({ 
+  companyId: data.companyId, 
+  companyName: data.companyName, 
+  role: data.role as 'admin' | 'client',
+  email: data.email // <--- ADICIONE ESTA LINHA AQUI
+});
         setCurrentView('dashboard');
       } else { alert(data.error || "Credenciais inválidas"); }
     } catch (error) { alert("Erro de conexão."); }
@@ -225,25 +231,36 @@ function App() {
 
   // 9. TROCAR SENHA
   const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const novaSenha = formData.get('novaSenha') as string;
+  e.preventDefault();
+  const formData = new FormData(e.currentTarget);
+  const password = formData.get('novaSenha') as string; // Pegamos o valor do input
 
-    if (!session) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/auth/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: session.companyId, novaSenha })
-      });
-      if (response.ok) {
-        alert("Senha alterada com sucesso!");
-        e.currentTarget.reset();
-      } else { alert("Erro ao alterar senha."); }
-    } catch (error) { alert("Erro de conexão."); }
-    finally { setLoading(false); }
-  };
+  if (!session?.email) return; // Segurança: precisamos do e-mail para atualizar
+
+  setLoading(true);
+  try {
+    const response = await fetch(`${API_URL}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        password: password, // O Python espera 'password'
+        email: session.email // O Python espera 'email'
+      }),
+    });
+
+    if (response.ok) {
+      alert("Senha alterada com sucesso! ✅");
+      (e.target as HTMLFormElement).reset();
+    } else {
+      const errorData = await response.json();
+      alert("Erro ao alterar: " + (errorData.message || "Erro desconhecido"));
+    }
+  } catch (error) {
+    alert("Erro de conexão com o servidor.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   // 10. BUSCAR EMPRESAS NO ADMIN
 const fetchAdminCompanies = async () => {
