@@ -564,31 +564,30 @@ useEffect(() => {
         {/* ABA: LEADS (FUNIL KANBAN COM DRAG AND DROP) */}
         {activeTab === 'leads' && (
           <section style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            Exatamente esse bloco, Vitor! Você matou a charada.
 
-Ao apagar apenas esse div (que é o cabeçalho antigo e simples), você abre espaço para o "painel de comando" do seu CRM, sem quebrar a funcionalidade de arrastar os leads lá embaixo.
+       {/* 1. CABEÇALHO CENTRALIZADO E LIMPO */}
+            <div style={{ textAlign: 'center', marginBottom: '40px', paddingTop: '20px' }}>
+              <h1 style={{ 
+                fontSize: '32px', 
+                fontWeight: '800', 
+                color: '#FFFFFF', 
+                margin: '0 0 8px 0', 
+                letterSpacing: '-1px' 
+              }}>
+                Gestão de Leads
+              </h1>
+              <p style={{ color: '#94A3B8', fontSize: '16px', margin: '0 0 20px 0' }}>
+                Controle sua escala e conversão em tempo real.
+              </p>
 
-🛠️ O que colar nesse lugar:
-Apague essas 4 linhas que você mandou e cole este código completo no lugar:
-
-TypeScript
-            {/* 1. CABEÇALHO REESTILIZADO */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '30px' }}>
-              <div>
-                <h1 style={{ fontSize: '28px', fontWeight: '800', color: '#FFFFFF', margin: 0, letterSpacing: '-0.5px' }}>
-                  Gestão de Leads
-                </h1>
-                <p style={{ color: '#94A3B8', fontSize: '14px', marginTop: '4px' }}>
-                  Controle sua escala e conversão em tempo real.
-                </p>
-              </div>
+              {/* Botão de atualizar centralizado abaixo do texto */}
               <button 
                 onClick={fetchLeads}
                 style={{
                   backgroundColor: '#1E293B',
                   color: '#5A7FFF',
                   border: '1px solid #334155',
-                  padding: '10px 20px',
+                  padding: '10px 24px',
                   borderRadius: '12px',
                   fontWeight: '600',
                   cursor: 'pointer',
