@@ -62,7 +62,7 @@ function App() {
   email: data.email // <--- ADICIONE ESTA LINHA AQUI
 });
         setCurrentView('dashboard');
-      } else { alert(data.error || "Credenciais inválidas"); }
+      } else { alert(data.message || data.error || "Credenciais inválidas"); }
     } catch (error) { alert("Erro de conexão."); }
     finally { setLoading(false); }
   };

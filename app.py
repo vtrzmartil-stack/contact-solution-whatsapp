@@ -66,39 +66,36 @@ def _safe_settings(value: Any) -> Dict[str, Any]:
 # ROTAS DE ADMIN E AUTENTICAÇÃO
 # ==========================================
 
-# ==========================================
-# 1. LOGIN BLINDADO
-# ==========================================
 @app.post("/api/auth/login")
 async def api_login(request: Request):
-    data = await request.json()
-    email, password = data.get("email"), data.get("password")
-    
-    # Bypass do Admin
-    if email == "admin@solution.com" and password == "123":
-        return {"companyId": "MASTER", "companyName": "Solution Admin", "role": "admin"}
-    
-    hashed_pw = hash_password(password)
     try:
-        with db_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, name FROM companies WHERE email=%s AND password=%s", (email, hashed_pw))
-                row = cur.fetchone()
-        
-        if row: 
-            # Verifica automaticamente se o banco mandou um Dicionário ou uma Tupla
-            is_dict = isinstance(row, dict) or hasattr(row, 'keys')
-            
-            return {
-                "companyId": str(row["id"] if is_dict else row[0]), 
-                "companyName": row["name"] if is_dict else row[1], 
-                "role": "client"
-            }
-    except Exception as e:
-        print(f"Erro no login: {e}")
-        
-    return JSONResponse(status_code=401, content={"error": "Credenciais Inválidas"})
+        data = await request.json()
+        email = data.get("email")
+        password = data.get("password")
 
+        # Buscamos o usuário no banco de dados
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT company_id, company_name, role, email, password FROM users WHERE email = %s", 
+                    (email,)
+                )
+                user = cur.fetchone()
+
+        # Validação da senha
+        if user and user['password'] == password:
+            return {
+                "status": "success",
+                "companyId": user['company_id'],
+                "companyName": user['company_name'],
+                "role": user['role'],
+                "email": user['email'] # Enviamos o e-mail para o React guardar
+            }
+        
+        return {"status": "error", "message": "E-mail ou senha incorretos"}, 401
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
 # ==========================================
 # 2. BUSCA DE LEADS BLINDADA
 # ==========================================
