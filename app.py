@@ -469,6 +469,22 @@ async def update_password(request: Request):
     except Exception as e:
         print(f"❌ Erro na troca de senha: {str(e)}")
         return {"status": "error", "message": "Erro interno no servidor."}, 500
+
+# --- ROTA PARA BUSCAR O FLUXO DO ROBÔ ---
+@app.get("/api/config/flow/{flow_id}")
+async def get_flow(flow_id: str):
+    try:
+        # Por enquanto, vamos retornar um fluxo vazio só para o React parar de dar erro
+        # No futuro, aqui você vai buscar os dados reais do banco de dados
+        return {
+            "status": "success",
+            "flow_id": flow_id,
+            "nodes": [],  # Caixinhas do fluxo
+            "edges": []   # Linhas conectando as caixinhas
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
