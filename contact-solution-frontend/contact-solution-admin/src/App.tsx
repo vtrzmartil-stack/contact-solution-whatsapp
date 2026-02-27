@@ -22,7 +22,10 @@ function App() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [currentView, setCurrentView] = useState<'login' | 'dashboard'>('login');
-  const [session, setSession] = useState<UserSession | null>(null);
+  const [session, setSession] = useState<UserSession | null>(() => {
+  const savedSession = localStorage.getItem('userSession');
+  return savedSession ? JSON.parse(savedSession) : null;
+});
   const [activeTab, setActiveTab] = useState('leads');
 
   const [leads, setLeads] = useState<Lead[]>([]);
