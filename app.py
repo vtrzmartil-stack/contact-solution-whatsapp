@@ -19,6 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import json
 from pydantic import BaseModel
+import uuid
 
 load_dotenv()
 
@@ -196,24 +197,32 @@ class RegisterCompanyRequest(BaseModel):
 @app.post("/api/admin/companies")
 async def register_company(data: RegisterCompanyRequest):
     hashed_pw = hash_password(data.password)
+    
+    # 🔥 A MÁGICA: Gerando um ID único no formato NODE_XXXX
+    # Isso evita o erro de "null value" no banco
+    generated_id = f"NODE_{uuid.uuid4().hex[:8].upper()}"
+    
     try:
         with db_conn() as conn:
             with conn.cursor() as cur:
-                # Verifica se o e-mail já existe para não dar erro duplicado
+                # Verifica se o e-mail já existe
                 cur.execute("SELECT id FROM companies WHERE email = %s", (data.email,))
                 if cur.fetchone():
                     return JSONResponse(status_code=400, content={"error": "E-mail já cadastrado!"})
 
-                # Insere a nova empresa no banco
+                # AGORA INCLUÍMOS O ID MANUALMENTE NA INSERÇÃO
+                # Note que especifiquei as colunas para não ter erro de ordem
                 cur.execute(
-                    "INSERT INTO companies (name, email, phone, bot_whatsapp, password, created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
-                    (data.name, data.email, data.phone, data.bot_whatsapp, hashed_pw)
+                    """INSERT INTO companies 
+                       (id, name, email, phone, bot_whatsapp, password, created_at, status) 
+                       VALUES (%s, %s, %s, %s, %s, %s, NOW(), 'active')""",
+                    (generated_id, data.name, data.email, data.phone, data.bot_whatsapp, hashed_pw)
                 )
             conn.commit()
-        return {"status": "success", "message": "Empresa cadastrada com sucesso!"}
+        return {"status": "success", "message": "Empresa cadastrada!", "id": generated_id}
     except Exception as e:
         print(f"Erro ao cadastrar empresa: {e}")
-        return JSONResponse(status_code=500, content={"error": "Erro ao salvar no banco de dados"})
+        return JSONResponse(status_code=500, content={"error": "Erro interno ao salvar no banco"})
 
     # Criamos um modelo para o corpo da requisição
 class MessageSendRequest(BaseModel):
