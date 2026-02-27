@@ -31,7 +31,9 @@ logger = logging.getLogger("contact-solution")
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-
+def get_db_connection():
+    # Esta função abre a porta do banco de dados usando a URL do Render
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 app = FastAPI(title="Contact Solution OS - Full Engine")
 
 app.add_middleware(
@@ -442,6 +444,32 @@ async def update_company(company_id: str, data: RegisterCompanyRequest):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+@app.post("/api/update-password") # No FastAPI usamos .post para ser mais direto
+async def update_password(request: Request):
+    try:
+        data = await request.json()
+        new_password = data.get('password')
+        user_email = data.get('email')
+
+        if not new_password or not user_email:
+            return {"status": "error", "message": "E-mail ou senha ausentes."}, 400
+
+        # --- LÓGICA DE BANCO DE DADOS ---
+        # 1. Abrimos a conexão (ajuste conforme o nome da sua função de conexão)
+        with get_db_connection() as conn: 
+            with conn.cursor() as cursor:
+                # 2. Executamos o comando de atualização
+                cursor.execute(
+                    "UPDATE users SET password = %s WHERE email = %s",
+                    (new_password, user_email)
+                )
+                conn.commit() # Salva a mudança no banco
+
+        return {"status": "success", "message": "Senha atualizada com sucesso!"}
+
+    except Exception as e:
+        print(f"Erro ao trocar senha: {e}") # Log para você ver no Render se algo falhar
+        return {"status": "error", "message": "Erro interno no servidor."}, 500
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
