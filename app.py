@@ -381,6 +381,22 @@ async def get_all_companies():
     except Exception as e:
         print(f"Erro ao buscar empresas: {e}")
         return JSONResponse(content=[], status_code=500)    
+    
+# ==========================================
+# ROTA SECRETA PARA ATUALIZAR O BANCO
+# ==========================================
+@app.get("/api/admin/fix-db")
+def fix_database():
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                # Adiciona as colunas novas caso elas não existam
+                cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS phone VARCHAR(50);")
+                cur.execute("ALTER TABLE companies ADD COLUMN IF NOT EXISTS bot_whatsapp VARCHAR(50);")
+            conn.commit()
+        return {"status": "Sucesso! O seu banco de dados foi atualizado com as novas colunas."}
+    except Exception as e:
+        return {"error": f"Erro ao atualizar banco: {str(e)}"}    
 
 if __name__ == "__main__":
     import uvicorn
