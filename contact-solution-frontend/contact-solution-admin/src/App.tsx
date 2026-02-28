@@ -248,59 +248,51 @@ function App() {
     finally { setLoading(false); }
   };
 
-  // 9. TROCAR SENHA
+// 9. TROCAR SENHA (VERSÃO BLINDADA)
   const handleChangePassword = async (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault();
-  
-  // RASTREADOR 1: O botão chamou a função?
-  console.log("🚀 1. Botão clicado! Iniciando função...");
+    e.preventDefault();
+    
+    // Tenta pegar o email da sessão ou direto do "crachá" no navegador
+    const savedSession = JSON.parse(localStorage.getItem('userSession') || '{}');
+    const userEmail = session?.email || savedSession.email;
 
-  const formData = new FormData(e.currentTarget);
-  const password = formData.get('novaSenha') as string;
-  
-  // RASTREADOR 2: Conseguiu ler o que você digitou?
-  console.log("🔑 2. Senha capturada do input:", password ? "Sim (tem texto)" : "Vazio/Falhou");
-  
-  // RASTREADOR 3: O que tem dentro da sessão neste exato momento?
-  console.log("👤 3. Dados da Sessão atual:", session);
+    console.log("🚀 Iniciando troca de senha para:", userEmail);
 
-  if (!session?.email) {
-    // RASTREADOR 4: A parede invisível!
-    console.error("❌ 4. PAREDE INVISÍVEL: O e-mail sumiu da sessão!");
-    alert("Erro: O sistema não achou seu e-mail. Por favor, saia e faça login de novo.");
-    return;
-  }
+    const formData = new FormData(e.currentTarget);
+    const password = formData.get('novaSenha') as string;
 
-  console.log("✅ 5. E-mail confirmado:", session.email, "- Enviando para o servidor...");
-  setLoading(true);
-
-  try {
-    const response = await fetch(`${API_URL}/api/auth/change-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        password: password, 
-        email: session.email 
-      }),
-    });
-
-    console.log("📡 6. Resposta do servidor:", response.status);
-
-    if (response.ok) {
-      alert("Senha alterada com sucesso! ✅");
-      (e.target as HTMLFormElement).reset();
-    } else {
-      const errorData = await response.json();
-      console.error("⚠️ 7. Servidor recusou:", errorData);
-      alert("Erro ao alterar: " + (errorData.message || "Erro desconhecido"));
+    if (!userEmail) {
+      console.error("❌ PAREDE INVISÍVEL: E-mail não encontrado em lugar nenhum!");
+      alert("Erro: O sistema não identificou seu e-mail. Saia e entre novamente.");
+      return;
     }
-  } catch (error) {
-    console.error("🚨 8. Erro de rede (Caiu no Catch):", error);
-    alert("Erro de conexão com o servidor.");
-  } finally {
-    setLoading(false);
-  }
-};
+
+    setLoading(true);
+    try {
+      // ATENÇÃO: Verifique se no seu app.py a rota é exatamente 'change-password' ou 'update-password'
+      const response = await fetch(`${API_URL}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          password: password, 
+          email: userEmail 
+        }),
+      });
+
+      const resData = await response.json();
+
+      if (response.ok) {
+        alert("Senha alterada com sucesso! ✅");
+        (e.target as HTMLFormElement).reset();
+      } else {
+        alert("Erro do servidor: " + (resData.message || resData.error || "Erro desconhecido"));
+      }
+    } catch (error) {
+      alert("Erro de conexão. O servidor está ligado?");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 10. BUSCAR EMPRESAS NO ADMIN
 const fetchAdminCompanies = async () => {
