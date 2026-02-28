@@ -474,10 +474,13 @@ async def update_password(request: Request):
 
         # 2. Validação simples
         if not new_password or not user_email:
-            return {"status": "error", "message": "Dados insuficientes para a troca."}, 400
+            # Usamos JSONResponse para o React entender que é um ERRO (400)
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Dados insuficientes para a troca."}
+            )
 
         # 3. Conecta no banco e atualiza
-        # Usando a função get_db_connection que definimos antes
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -485,12 +488,23 @@ async def update_password(request: Request):
                     (new_password, user_email)
                 )
                 conn.commit()
+                
+                # Opcional: Verificar se o email realmente existia
+                if cur.rowcount == 0:
+                    return JSONResponse(
+                        status_code=404,
+                        content={"status": "error", "message": "Usuário não encontrado no banco."}
+                    )
 
+        # Retorno de sucesso (aqui pode ser direto, pois o padrão é 200)
         return {"status": "success", "message": "Senha atualizada com sucesso! ✅"}
 
     except Exception as e:
         print(f"❌ Erro na troca de senha: {str(e)}")
-        return {"status": "error", "message": "Erro interno no servidor."}, 500
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Erro interno no servidor."}
+        )
 
 # --- ROTA PARA BUSCAR O FLUXO DO ROBÔ ---
 @app.get("/api/config/flow/{flow_id}")
