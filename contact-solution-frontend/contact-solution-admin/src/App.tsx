@@ -44,7 +44,7 @@ function App() {
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
   // ==========================================
 
-// 1. LOGIN
+  // 1. LOGIN
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -58,18 +58,32 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
+      
       const data = await response.json();
+
       if (response.ok) {
+        // --- ESTA LINHA SALVA O LOGIN NO NAVEGADOR PARA O F5 NÃO TE DERRUBAR ---
+        localStorage.setItem('userSession', JSON.stringify(data)); 
+        
         setSession({ 
-  companyId: data.companyId, 
-  companyName: data.companyName, 
-  role: data.role as 'admin' | 'client',
-  email: data.email // <--- ADICIONE ESTA LINHA AQUI
-});
+          companyId: data.companyId, 
+          companyName: data.companyName, 
+          role: data.role as 'admin' | 'client',
+          email: data.email 
+        });
         setCurrentView('dashboard');
-      } else { alert(data.message || data.error || "Credenciais inválidas"); }
-    } catch (error) { alert("Erro de conexão."); }
-    finally { setLoading(false); }
+      } else {
+        // Caso as credenciais estejam erradas
+        alert(data.message || data.error || "Credenciais inválidas");
+      }
+    } catch (error) {
+      // Caso o servidor (Render) esteja fora do ar ou erro de rede
+      console.error("Erro no login:", error);
+      alert("Erro de conexão com o servidor.");
+    } finally {
+      // Para o spinner de carregamento aconteça o que acontecer
+      setLoading(false);
+    }
   };
 
 // 2. REGISTRAR EMPRESA (Livre de fantasmas!)
