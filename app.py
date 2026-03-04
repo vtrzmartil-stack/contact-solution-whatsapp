@@ -25,6 +25,10 @@ import random
 import string
 load_dotenv()
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 # ---------------------------
 # Configurações e Logging
 # ---------------------------
@@ -620,6 +624,42 @@ async def forgot_password(request: Request):
     except Exception as e:
         print(f"Erro no forgot-password: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "message": "Erro interno no servidor"})
+    
+# --- CONFIGURAÇÕES DO GMAIL ---
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 465
+EMAIL_REMETENTE = "ctactsolution@gmail.com" # ⚠️ Altere aqui
+SENHA_APP_GOOGLE = "myaj nwyy hizd jrbv" # ⚠️ Altere aqui (sem espaços)
+
+def enviar_email_recuperacao(email_destino, nova_senha):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = f"Contact Solution <{EMAIL_REMETENTE}>"
+        msg['To'] = email_destino
+        msg['Subject'] = "Sua Nova Senha Temporária - Contact Solution"
+
+        corpo = f"""
+        Olá,
+        
+        Recebemos uma solicitação de recuperação de senha para sua conta no Contact Solution.
+        Sua nova senha temporária é: {nova_senha}
+        
+        Por favor, acesse o sistema com esta senha e altere-a imediatamente no seu perfil.
+        
+        Atenciosamente,
+        Equipe Contact Solution.
+        """
+        msg.attach(MIMEText(corpo, 'plain'))
+
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(EMAIL_REMETENTE, SENHA_APP_GOOGLE)
+            server.sendmail(EMAIL_REMETENTE, email_destino, msg.as_string())
+            
+        print(f"✅ E-mail enviado com sucesso para {email_destino}")
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao enviar e-mail: {e}")
+        return False
 
 if __name__ == "__main__":
     import uvicorn
