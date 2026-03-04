@@ -91,9 +91,9 @@ async def api_login(request: Request):
             with conn.cursor() as cur:
                 # Verifique se o nome das colunas no banco é exatamente este:
                 cur.execute(
-                    "SELECT company_id, company_name, role, email, password FROM users WHERE email = %s", 
-                    (email,)
-                )
+             "SELECT company_id, NOME_CORRETO_AQUI, role, email, password FROM users WHERE email = %s", 
+            (email,)
+            )
                 user = cur.fetchone()
 
         # 3. VALIDAÇÃO DA SENHA E RETORNO
