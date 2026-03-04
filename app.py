@@ -86,24 +86,24 @@ async def api_login(request: Request):
                 "email": "admin@master.com"
             }
 
-        # 2. BUSCA NO BANCO DE DADOS
+        # 2. BUSCA NO BANCO APENAS COM AS COLUNAS QUE REALMENTE EXISTEM
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Verifique se o nome das colunas no banco é exatamente este:
                 cur.execute(
-             "SELECT company_id, nome, role, email, password FROM users WHERE email = %s", 
-            (email,)
-            )
+                    "SELECT company_id, role, email, password FROM users WHERE email = %s", 
+                    (email,)
+                )
                 user = cur.fetchone()
 
-        # 3. VALIDAÇÃO DA SENHA E RETORNO
+        # 3. VALIDAÇÃO DA SENHA E RETORNO PARA O REACT
         if user and user['password'] == password:
             return {
                 "status": "success",
                 "companyId": user['company_id'],
-                "companyName": user['nome'], # <-- A MUDANÇA FOI AQUI! 
+                # Como não temos o nome na tabela users, usamos o ID para o React não quebrar:
+                "companyName": f"Empresa {user['company_id']}", 
                 "role": user['role'],
-                "email": user['email'] # O React PRECISA disso aqui
+                "email": user['email'] # O React vai salvar isso e a senha vai funcionar!
             }
         
         # 4. TRATAMENTO CORRETO DE ERRO (Para o React entender que falhou)
