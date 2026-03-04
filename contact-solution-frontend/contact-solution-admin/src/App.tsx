@@ -82,12 +82,64 @@ const handleRecoverPassword = async () => {
     alert("Função de recuperação de senha em manutenção.");
 };
 
+// ==========================================
+  // 🚀 VARIÁVEIS E FUNÇÕES DO DISPARO MANUAL E FOLLOW-UP
+  // ==========================================
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualMessage, setManualMessage] = useState('');
+  // Lista temporária de leads para você testar o clique do Follow-up!
+  const [contacts] = useState<any[]>([
+    { id: 1, name: "Lead Teste 1", phone: "5511999999999" },
+    { id: 2, name: "Lead Teste 2", phone: "5511988888888" }
+  ]);
+  const [isSending, setIsSending] = useState(false);
+
+  // Função 1: Puxa os dados do lead ao clicar nele na lista
+  const handleSelectLeadForFollowUp = (lead: any) => {
+    setManualPhone(lead.phone);
+    setManualMessage(`Olá ${lead.name}, tudo bem? Vi que conversamos recentemente, mas acabamos não finalizando. Ficou alguma dúvida que eu possa ajudar?`);
+  };
+
+  // Função 2: O motor que envia a mensagem pro Python
+  const handleManualSend = async () => {
+    if (!manualPhone.trim() || !manualMessage.trim()) {
+      alert("Preencha o número e a mensagem!");
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: "MASTER", 
+          phone: manualPhone.replace(/\D/g, ''), // Deixa só os números
+          text: manualMessage
+        }),
+      });
+
+      if (response.ok) {
+        alert("🚀 Mensagem enviada com sucesso!");
+        setManualMessage(''); // Limpa o campo para o próximo disparo
+      } else {
+        alert("❌ Erro ao enviar a mensagem. Verifique o terminal do Python.");
+      }
+    } catch (error) {
+      console.error("Erro no disparo manual:", error);
+      alert("Erro de conexão com o servidor.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+  // ==========================================
+
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
   // ==========================================
 
   // 1. LOGIN
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const email = formData.get('email') as string;
@@ -100,18 +152,18 @@ const handleRecoverPassword = async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      
+
       const data = await response.json();
 
       if (response.ok) {
         // --- ESTA LINHA SALVA O LOGIN NO NAVEGADOR PARA O F5 NÃO TE DERRUBAR ---
-        localStorage.setItem('userSession', JSON.stringify(data)); 
-        
-        setSession({ 
-          companyId: data.companyId, 
-          companyName: data.companyName, 
+        localStorage.setItem('userSession', JSON.stringify(data));
+
+        setSession({
+          companyId: data.companyId,
+          companyName: data.companyName,
           role: data.role as 'admin' | 'client',
-          email: data.email 
+          email: data.email
         });
         setCurrentView('dashboard');
       } else {
@@ -126,7 +178,7 @@ const handleRecoverPassword = async () => {
       // Para o spinner de carregamento aconteça o que acontecer
       setLoading(false);
     }
-  };
+  }
 
 // 2. REGISTRAR EMPRESA (Livre de fantasmas!)
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1292,6 +1344,80 @@ useEffect(() => {
                 </div>
               ))}
               {adminCompanies.length === 0 && <p style={{ color: 'var(--text-muted)' }}>Nenhuma empresa encontrada no banco.</p>}
+            </div>
+          </section>
+        )}
+{/* ========================================= */}
+        {/* ABA: DISPARO MANUAL & FOLLOW-UP (OUTBOUND) */}
+        {/* ========================================= */}
+        {activeTab === 'send' && (
+          <section>
+            <div style={{ marginBottom: '30px' }}>
+              <h2>Central de Disparo & Recuperação de Leads</h2>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Inicie conversas ou faça follow-up com leads que esfriaram.</p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+              
+              {/* ESQUERDA: O SEU DISPARADOR MANUAL */}
+              <div style={{ flex: 1, maxWidth: '600px', background: '#1e293b', padding: '30px', borderRadius: '8px', border: '1px solid #334155' }}>
+                <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#3b82f6' }}>1. Preparar Disparo</h3>
+                
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Número do WhatsApp (com 55 e DDD)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 5511999999999"
+                    value={manualPhone}
+                    onChange={(e) => setManualPhone(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '5px', border: '1px solid #334155', background: '#0f172a', color: 'white', outline: 'none' }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Sua Mensagem</label>
+                  <textarea
+                    rows={5}
+                    placeholder="Digite sua mensagem aqui..."
+                    value={manualMessage}
+                    onChange={(e) => setManualMessage(e.target.value)}
+                    style={{ width: '100%', padding: '12px', borderRadius: '5px', border: '1px solid #334155', background: '#0f172a', color: 'white', outline: 'none', resize: 'vertical' }}
+                  />
+                </div>
+
+                <button 
+                  className="btn-primary" 
+                  onClick={handleManualSend} 
+                  disabled={isSending}
+                  style={{ width: '100%', padding: '15px', fontSize: '16px', fontWeight: 'bold', opacity: isSending ? 0.7 : 1, cursor: isSending ? 'not-allowed' : 'pointer' }}
+                >
+                  {isSending ? 'Enviando...' : 'Disparar Mensagem 🚀'}
+                </button>
+              </div>
+
+              {/* DIREITA: LISTA INTELIGENTE DE FOLLOW-UP */}
+              <div style={{ width: '350px', background: '#1e293b', padding: '20px', borderRadius: '8px', border: '1px solid #334155', display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <h3 style={{ marginTop: 0, marginBottom: '5px', color: '#f59e0b' }}>Leads para Follow-up</h3>
+                <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '15px' }}>Clique para preencher o disparo automaticamente.</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: '400px' }}>
+                  {contacts && contacts.length > 0 ? contacts.map((lead: any) => (
+                    <div 
+                      key={lead.id}
+                      onClick={() => handleSelectLeadForFollowUp(lead)}
+                      style={{ padding: '15px', background: '#0f172a', borderRadius: '5px', border: '1px solid #334155', cursor: 'pointer', transition: '0.2s' }}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = '#f59e0b'}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = '#334155'}
+                    >
+                      <strong style={{ display: 'block', marginBottom: '5px' }}>{lead.name}</strong>
+                      <span style={{ fontSize: '12px', color: '#94a3b8' }}>{lead.phone}</span>
+                    </div>
+                  )) : (
+                    <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>Nenhum lead disponível no momento.</div>
+                  )}
+                </div>
+              </div>
+
             </div>
           </section>
         )}
