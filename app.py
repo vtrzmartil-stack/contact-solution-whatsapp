@@ -493,27 +493,50 @@ async def update_password(request: Request):
 
         # 2. Validação simples
         if not new_password or not user_email:
-            # Usamos JSONResponse para o React entender que é um ERRO (400)
             return JSONResponse(
                 status_code=400,
                 content={"status": "error", "message": "Dados insuficientes para a troca."}
             )
 
-        # 3. Conecta no banco e atualiza
+        # Criptografa a senha para manter a tabela 'companies' segura também
+        # (Usando a mesma função que você já tem no arquivo)
+        hashed_pw = hash_password(new_password)
+
+        # 3. Conecta no banco e atualiza as DUAS tabelas
         with get_db_connection() as conn:
             with conn.cursor() as cur:
+                # Atualiza a tabela USERS (Que usamos no login)
                 cur.execute(
                     "UPDATE users SET password = %s WHERE email = %s",
                     (new_password, user_email)
                 )
-                conn.commit()
+                linhas_alteradas = cur.rowcount
                 
-                # Opcional: Verificar se o email realmente existia
-                if cur.rowcount == 0:
+                # Atualiza a tabela COMPANIES (Para manter tudo sincronizado)
+                cur.execute(
+                    "UPDATE companies SET password = %s WHERE email = %s",
+                    (hashed_pw, user_email)
+                )
+
+                # Se o e-mail não existia em lugar nenhum, barra aqui!
+                if linhas_alteradas == 0:
                     return JSONResponse(
                         status_code=404,
                         content={"status": "error", "message": "Usuário não encontrado no banco."}
                     )
+                    
+            # O commit salva tudo de uma vez!
+            conn.commit()
+
+        # 4. RETORNO DE SUCESSO (A peça que faltava no seu código!)
+        return {"status": "success", "message": "Senha alterada com sucesso!"}
+        
+    except Exception as e:
+        print(f"Erro ao trocar senha: {e}")
+        return JSONResponse(
+            status_code=500, 
+            content={"status": "error", "message": "Erro interno do servidor"}
+        )
 
         # Retorno de sucesso (aqui pode ser direto, pois o padrão é 200)
         return {"status": "success", "message": "Senha atualizada com sucesso! ✅"}
