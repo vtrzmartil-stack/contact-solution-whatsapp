@@ -11,7 +11,7 @@ PHONE_NUMBER_ID = "956946084171393"
 # Coloque o seu número que você verificou lá no painel. 
 # Formato: Código do País (55) + DDD + Número. Tudo junto, sem + ou traços.
 # Exemplo: "5511999998888"
-NUMERO_DESTINO = "5511964816315" 
+NUMERO_DESTINO = "551164816315" 
 # ==========================================
 
 # A URL oficial da API da Meta
@@ -44,7 +44,8 @@ response = requests.post(url, headers=headers, data=json.dumps(payload))
 
 # Analisando a resposta da Meta
 if response.status_code == 200:
-    print("✅ MENSAGEM ENVIADA COM SUCESSO! Olha o seu celular!")
+    print("✅ MENSAGEM ACEITA PELA META! O recibo deles é:")
+    print(response.json()) # <--- Adicionamos essa linha para ver o retorno!
 else:
     print("❌ ERRO AO ENVIAR:")
     print(response.json())
