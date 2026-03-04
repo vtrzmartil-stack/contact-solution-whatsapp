@@ -20,6 +20,9 @@ interface UserSession {
 
 function App() {
   const [selectedContact, setSelectedContact] = useState<any>(null);
+  useEffect(() => {
+    setSelectedContact({ name: "Meu Teste", phone: "5511964816315" });
+  }, []);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [currentView, setCurrentView] = useState<'login' | 'dashboard'>(() => {
