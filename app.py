@@ -228,7 +228,6 @@ async def register_company(data: RegisterCompanyRequest):
     hashed_pw = hash_password(data.password)
     
     # 🔥 A MÁGICA: Gerando um ID único no formato NODE_XXXX
-    # Isso evita o erro de "null value" no banco
     generated_id = f"NODE_{uuid.uuid4().hex[:8].upper()}"
     
     try:
@@ -239,16 +238,28 @@ async def register_company(data: RegisterCompanyRequest):
                 if cur.fetchone():
                     return JSONResponse(status_code=400, content={"error": "E-mail já cadastrado!"})
 
-                # AGORA INCLUÍMOS O ID MANUALMENTE NA INSERÇÃO
-                # Note que especifiquei as colunas para não ter erro de ordem
+                # 1. INSERE A EMPRESA (A casa)
                 cur.execute(
                     """INSERT INTO companies 
                        (id, name, email, phone, bot_whatsapp, password, created_at, status) 
                        VALUES (%s, %s, %s, %s, %s, %s, NOW(), 'active')""",
                     (generated_id, data.name, data.email, data.phone, data.bot_whatsapp, hashed_pw)
                 )
-            conn.commit()
-        return {"status": "success", "message": "Empresa cadastrada!", "id": generated_id}
+
+                # 2. INSERE O USUÁRIO (A chave da casa)
+                # Usamos data.password (senha normal) para o seu login conseguir ler perfeitamente!
+                cur.execute(
+                    """INSERT INTO users 
+                       (company_id, email, password, role) 
+                       VALUES (%s, %s, %s, 'client')""",
+                    (generated_id, data.email, data.password)
+                )
+                
+            # O commit aqui salva as DUAS tabelas ao mesmo tempo!
+            conn.commit() 
+            
+        return {"status": "success", "message": "Empresa e Acesso cadastrados com sucesso!", "id": generated_id}
+        
     except Exception as e:
         print(f"Erro ao cadastrar empresa: {e}")
         return JSONResponse(status_code=500, content={"error": "Erro interno ao salvar no banco"})
