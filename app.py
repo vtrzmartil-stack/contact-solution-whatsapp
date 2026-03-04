@@ -663,7 +663,7 @@ async def forgot_password(request: Request):
 # ==========================================
 # 🔑 SUAS CHAVES MÁGICAS AQUI
 # ==========================================
-TOKEN = "EAAL7kEUNnu0BQ9DgHb51RDx5ci5XkOzI8s9CwfOm7d7ieQSvZCtEGPZA6eZA4EuywUKS4sZA5cUvuW5IKxHZAxGAlP9JVxPqnJNWIztRGc0Yj2HhrUYTdwJTBUA3Aj0UBseZCKSyhE1wQe40Xbyys2vi0cIBPpVaJXWNQu89k1XZAJnuOaZAJSN5edVprZBTvJqMEwwku5NDHqXP6k5ZBswo8OaQOP3ZBlvqGtlb4NTyuyqONbjjQcMr3YPbuISbnZAZBZCfNYVbVXQNrBV9FKY1L1GsHecEfVYI3YeoMDywZDZD"
+TOKEN = "EAAL7kEUNnu0BQ7E3oS0333DNnsgYofMwp84JSAKz7doHD7kkkR53GeuYVGfVrC7KAYfMHLaRNDq8HUNTlZBp1y3aoHzmdQULA7hcUsxWlcATZCtfXdMNCEmCePToIyf7IOktm9UBv0R5XxGECDQ95ZBDKlnfoMatLgz3TVzMtBaOLkd24q6dmSB8xu3HoAGVLzyHpmAgZAZCEymtAAu1toNPyVLZCGyZBr0ERlY3oAaTn29RQVZCFjwVge82d3kVFZBnug4Wt4GULytrKTwOTaYIOAReu1T4qViYun40ZD"
 PHONE_NUMBER_ID = "956946084171393"
 
 # Coloque o seu número que você verificou lá no painel. 
