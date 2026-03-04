@@ -29,6 +29,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import requests
+import json
 # ---------------------------
 # Configurações e Logging
 # ---------------------------
@@ -657,6 +659,54 @@ async def forgot_password(request: Request):
     except Exception as e:
         print(f"Erro no forgot-password: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "message": "Erro interno no servidor"})
+    
+# ==========================================
+# 🔑 SUAS CHAVES MÁGICAS AQUI
+# ==========================================
+TOKEN = "EAAL7kEUNnu0BQ9DgHb51RDx5ci5XkOzI8s9CwfOm7d7ieQSvZCtEGPZA6eZA4EuywUKS4sZA5cUvuW5IKxHZAxGAlP9JVxPqnJNWIztRGc0Yj2HhrUYTdwJTBUA3Aj0UBseZCKSyhE1wQe40Xbyys2vi0cIBPpVaJXWNQu89k1XZAJnuOaZAJSN5edVprZBTvJqMEwwku5NDHqXP6k5ZBswo8OaQOP3ZBlvqGtlb4NTyuyqONbjjQcMr3YPbuISbnZAZBZCfNYVbVXQNrBV9FKY1L1GsHecEfVYI3YeoMDywZDZD"
+PHONE_NUMBER_ID = "956946084171393"
+
+# Coloque o seu número que você verificou lá no painel. 
+# Formato: Código do País (55) + DDD + Número. Tudo junto, sem + ou traços.
+# Exemplo: "5511999998888"
+NUMERO_DESTINO = "5511964816315" 
+# ==========================================
+
+# A URL oficial da API da Meta
+url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
+
+# Os cabeçalhos de autorização (é aqui que o Token entra)
+headers = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# O corpo da mensagem. Vamos usar o template padrão "hello_world" que a Meta 
+# já deixa pré-aprovado para testes.
+payload = {
+    "messaging_product": "whatsapp",
+    "to": NUMERO_DESTINO,
+    "type": "template",
+    "template": {
+        "name": "hello_world",
+        "language": {
+            "code": "en_US" # O template padrão de teste deles é em inglês
+        }
+    }
+}
+
+print("Enviando mensagem para o WhatsApp...")
+
+# O disparo do foguete! 🚀
+response = requests.post(url, headers=headers, data=json.dumps(payload))
+
+# Analisando a resposta da Meta
+if response.status_code == 200:
+    print("✅ MENSAGEM ENVIADA COM SUCESSO! Olha o seu celular!")
+else:
+    print("❌ ERRO AO ENVIAR:")
+    print(response.json())
+
 
 if __name__ == "__main__":
     import uvicorn
