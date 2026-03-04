@@ -38,6 +38,14 @@ function App() {
   const [adminCompanies, setAdminCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // 1. A lista com todos os seus funis criados
+  const [funisSalvos, setFunisSalvos] = useState<any[]>([]);
+
+  // 2. Os dados do funil que está aberto na tela AGORA
+  const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
+  const [currentFlowName, setCurrentFlowName] = useState<string>("Novo Funil Mestre");
+  
+  // 3. A sua variável original, intacta, para não quebrar o seu HTML!
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
@@ -1106,33 +1114,107 @@ useEffect(() => {
         {/* ABA: FLUXO */}
         {activeTab === 'flow' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-              <div><h2>Configuração do Robô</h2><p style={{ color: 'var(--text-muted)', margin: 0 }}>Defina as 9 perguntas que o bot fará.</p></div>
-              <button className="btn-primary" style={{ width: 'auto' }} onClick={handleDeployFlow}>Salvar Alterações</button>
+            
+            {/* 1. CABEÇALHO COM BOTÃO DE NOVO FUNIL */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h2>Configuração de Múltiplos Funis</h2>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Crie vários fluxos de atendimento e gerencie as etapas.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '10px 15px', borderRadius: '5px', border: '1px solid #3b82f6', background: 'transparent', color: '#3b82f6', cursor: 'pointer', fontWeight: 'bold' }} 
+                  onClick={() => {
+                    // Mágica para criar um funil novo instantaneamente
+                    const newId = Date.now().toString();
+                    const newFlow = { id: newId, nome: `Novo Funil ${funisSalvos.length + 1}`, messages: Array(9).fill('') };
+                    setFunisSalvos([...funisSalvos, newFlow]);
+                    setCurrentFlowId(newId);
+                    setCurrentFlowName(newFlow.nome);
+                    setFlowMessages(newFlow.messages);
+                  }}
+                >
+                  + Novo Funil
+                </button>
+                <button className="btn-primary" style={{ width: 'auto' }} onClick={handleDeployFlow}>
+                  Salvar Funil Atual
+                </button>
+              </div>
             </div>
-            <div style={{ maxWidth: '800px' }}>
-              {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((idx) => {
-                const n = idx + 1;
-                return (
-                  <div key={n} className="step-box">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}>
-                      <span>Pergunta {n}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
+
+            {/* 2. BARRA DE CONTROLE (SELECIONAR E RENOMEAR FUNIL) */}
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '30px', background: '#1e293b', padding: '15px', borderRadius: '8px', border: '1px solid #334155' }}>
+              
+              {/* Dropdown para escolher o funil */}
+              <select 
+                value={currentFlowId || ''} 
+                onChange={(e) => {
+                  const selected = funisSalvos.find(f => f.id === e.target.value);
+                  if (selected) {
+                    setCurrentFlowId(selected.id);
+                    setCurrentFlowName(selected.nome);
+                    setFlowMessages(selected.messages);
+                  }
+                }}
+                style={{ padding: '10px', borderRadius: '5px', background: '#0f172a', color: 'white', border: '1px solid #334155', flex: 1, outline: 'none' }}
+              >
+                <option value="" disabled>Selecione um funil para editar...</option>
+                {funisSalvos.map(f => (
+                  <option key={f.id} value={f.id}>{f.nome}</option>
+                ))}
+              </select>
+
+              {/* Campo para editar o nome do funil selecionado */}
+              {currentFlowId && (
+                <input 
+                  type="text" 
+                  value={currentFlowName} 
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setCurrentFlowName(newName);
+                    setFunisSalvos(prev => prev.map(f => f.id === currentFlowId ? { ...f, nome: newName } : f));
+                  }}
+                  placeholder="Nome do Funil (ex: Vendas Quentes)"
+                  style={{ padding: '10px', borderRadius: '5px', background: '#0f172a', color: 'white', border: '1px solid #334155', flex: 1, outline: 'none' }}
+                />
+              )}
+            </div>
+
+            {/* 3. ÁREA DAS PERGUNTAS (Só aparece se tiver um funil selecionado) */}
+            {currentFlowId ? (
+              <div style={{ maxWidth: '800px' }}>
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((idx) => {
+                  const n = idx + 1;
+                  return (
+                    <div key={n} className="step-box">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: '14px' }}>
+                        <span>Pergunta {n}</span>
+                        <span style={{ color: 'var(--text-muted)' }}>Coluna {String.fromCharCode(64 + n)} da Planilha</span>
+                      </div>
+                      <textarea
+                        rows={2}
+                        placeholder={`Mensagem da etapa ${n}...`}
+                        value={flowMessages[idx] || ''}
+                        onChange={(e) => {
+                          const novasMensagens = [...flowMessages];
+                          novasMensagens[idx] = e.target.value;
+                          setFlowMessages(novasMensagens);
+                          // Garante que o texto digitado seja salvo dentro do funil correto
+                          setFunisSalvos(prev => prev.map(f => f.id === currentFlowId ? { ...f, messages: novasMensagens } : f));
+                        }}
+                      />
                     </div>
-                    <textarea
-                      rows={2}
-                      placeholder={`Mensagem da etapa ${n}...`}
-                      value={flowMessages[idx] || ''}
-                      onChange={(e) => {
-                        const novasMensagens = [...flowMessages];
-                        novasMensagens[idx] = e.target.value;
-                        setFlowMessages(novasMensagens);
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // 4. MENSAGEM DE TELA VAZIA
+              <div style={{ textAlign: 'center', padding: '40px', background: '#1e293b', borderRadius: '8px', color: '#94a3b8', border: '1px dashed #334155' }}>
+                <h3>Nenhum funil selecionado</h3>
+                <p>Clique em <strong>+ Novo Funil</strong> acima para criar sua primeira sequência de mensagens.</p>
+              </div>
+            )}
           </section>
         )}
 
