@@ -76,8 +76,7 @@ async def api_login(request: Request):
         password = data.get("password")
 
         # 1. ATALHO DE SEGURANÇA (MASTER/ADMIN)
-        # Se você quiser um login que sempre funcione sem depender do banco:
-        if email == "admin@master.com" and password == "suasenha": # Ajuste a senha
+        if email == "admin@master.com" and password == "suasenha": # Lembre de usar essa exata credencial pra testar o admin!
             return {
                 "status": "success",
                 "companyId": "MASTER",
@@ -95,15 +94,24 @@ async def api_login(request: Request):
                 )
                 user = cur.fetchone()
 
+        # --- 🕵️‍♂️ INÍCIO DO RADAR DE DEBUG (Soro da Verdade) ---
+        if user is None:
+            # Se o banco não achar o e-mail, ele avisa na hora!
+            return {"status": "error", "message": f"RADAR: O e-mail '{email}' não existe na tabela users!"}
+            
+        if user['password'] != password:
+            # Se a senha for diferente, ele dedura o que está no banco!
+            return {"status": "error", "message": f"RADAR: Senha não bate! No banco está '{user['password']}' e vc digitou '{password}'"}
+        # --- FIM DO RADAR ---
+
         # 3. VALIDAÇÃO DA SENHA E RETORNO PARA O REACT
         if user and user['password'] == password:
             return {
                 "status": "success",
                 "companyId": user['company_id'],
-                # Como não temos o nome na tabela users, usamos o ID para o React não quebrar:
                 "companyName": f"Empresa {user['company_id']}", 
                 "role": user['role'],
-                "email": user['email'] # O React vai salvar isso e a senha vai funcionar!
+                "email": user['email'] 
             }
         
         # 4. TRATAMENTO CORRETO DE ERRO (Para o React entender que falhou)
