@@ -66,7 +66,8 @@ def _safe_settings(value: Any) -> Dict[str, Any]:
 # ROTAS DE ADMIN E AUTENTICAÇÃO
 # ==========================================
 
-from fastapi.responses import JSONResponse # Garanta que tem esse import no topo do arquivo
+# Garanta que esta linha está no topo do seu app.py:
+from fastapi.responses import JSONResponse 
 
 @app.post("/api/auth/login")
 async def api_login(request: Request):
@@ -76,7 +77,7 @@ async def api_login(request: Request):
         password = data.get("password")
 
         # 1. ATALHO DE SEGURANÇA (MASTER/ADMIN)
-        if email == "admin@master.com" and password == "suasenha": # Lembre de usar essa exata credencial pra testar o admin!
+        if email == "admin@master.com" and password == "suasenha":
             return {
                 "status": "success",
                 "companyId": "MASTER",
@@ -94,31 +95,23 @@ async def api_login(request: Request):
                 )
                 user = cur.fetchone()
 
-        # --- 🕵️‍♂️ INÍCIO DO RADAR DE DEBUG (Soro da Verdade) ---
-        if user is None:
-            # Se o banco não achar o e-mail, ele avisa na hora!
-            return {"status": "error", "message": f"RADAR: O e-mail '{email}' não existe na tabela users!"}
-            
-        if user['password'] != password:
-            # Se a senha for diferente, ele dedura o que está no banco!
-            return {"status": "error", "message": f"RADAR: Senha não bate! No banco está '{user['password']}' e vc digitou '{password}'"}
-        # --- FIM DO RADAR ---
+        # 3. A BARREIRA DE AÇO (Validação rigorosa)
+        # Se não achou o usuário (None) OU se a senha digitada for diferente do banco:
+        if not user or user['password'] != password:
+            # Mandamos o envelope VERMELHO (401) para o React bater a porta!
+            return JSONResponse(
+                status_code=401, 
+                content={"status": "error", "message": "E-mail ou senha incorretos."}
+            )
 
-        # 3. VALIDAÇÃO DA SENHA E RETORNO PARA O REACT
-        if user and user['password'] == password:
-            return {
-                "status": "success",
-                "companyId": user['company_id'],
-                "companyName": f"Empresa {user['company_id']}", 
-                "role": user['role'],
-                "email": user['email'] 
-            }
-        
-        # 4. TRATAMENTO CORRETO DE ERRO (Para o React entender que falhou)
-        return JSONResponse(
-            status_code=401, 
-            content={"status": "error", "message": "E-mail ou senha incorretos"}
-        )
+        # 4. SUCESSO! A senha está certa. (Envelope Verde automático)
+        return {
+            "status": "success",
+            "companyId": user['company_id'],
+            "companyName": f"Empresa {user['company_id']}", 
+            "role": user['role'],
+            "email": user['email'] 
+        }
 
     except Exception as e:
         print(f"Erro no servidor: {e}")
