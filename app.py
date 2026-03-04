@@ -31,6 +31,11 @@ from email.mime.multipart import MIMEMultipart
 
 import requests
 import json
+
+# CONFIGURAÇÕES DO WHATSAPP (Substitua pelos seus dados)
+WA_TOKEN = "EAAL7kEUNnu0BQ7E3oS0333DNnsgYofMwp84JSAKz7doHD7kkkR53GeuYVGfVrC7KAYfMHLaRNDq8HUNTlZBp1y3aoHzmdQULA7hcUsxWlcATZCtfXdMNCEmCePToIyf7IOktm9UBv0R5XxGECDQ95ZBDKlnfoMatLgz3TVzMtBaOLkd24q6dmSB8xu3HoAGVLzyHpmAgZAZCEymtAAu1toNPyVLZCGyZBr0ERlY3oAaTn29RQVZCFjwVge82d3kVFZBnug4Wt4GULytrKTwOTaYIOAReu1T4qViYun40ZD"
+WA_PHONE_ID = "956946084171393"
+
 # ---------------------------
 # Configurações e Logging
 # ---------------------------
@@ -181,6 +186,64 @@ async def update_lead_status(lead_id: int, data: StatusUpdate):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
+# 2. ROTA DE ENVIO MENSAGENS WPP
+# ==========================================
+
+def enviar_whatsapp(numero_destino, nome_cliente):
+    url = f"https://graph.facebook.com/v19.0/{WA_PHONE_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WA_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # Payload usando o template hello_world (ajustaremos para o seu depois)
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero_destino,
+        "type": "template",
+        "template": {
+            "name": "hello_world",
+            "language": {"code": "en_US"}
+        }
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        return response.json()
+    except Exception as e:
+        print(f"Erro ao disparar WhatsApp: {e}")
+        return None
+    
+def disparar_zap(meu_numero, texto):
+    """Função que limpa o número e envia a mensagem real"""
+    # 1. Limpa o número (deixa só dígitos)
+    num_limpo = "".join(filter(str.isdigit, meu_numero))
+    if not num_limpo.startswith("55"):
+        num_limpo = f"55{num_limpo}"
+    
+    # ⚠️ AQUI: Se for o seu número de teste que buga com o 9, 
+    # você pode forçar a retirada do 9 aqui para testes.
+    
+    url = f"https://graph.facebook.com/v19.0/{WA_PHONE_ID}/messages"
+    headers = {"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"}
+    
+    # Se for a primeira mensagem, a Meta exige TEMPLATE (ex: hello_world)
+    # Se já houver conversa aberta, você pode usar "text"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": num_limpo,
+        "type": "text",
+        "text": {"body": texto}
+    }
+    
+    try:
+        res = requests.post(url, headers=headers, json=payload)
+        return res.json()
+    except Exception as e:
+        print(f"Erro na API da Meta: {e}")
+        return None
+
+# ==========================================
 # ROTA DE MENSAGENS BLINDADA E COM ACESSO ADMIN
 # ==========================================
 @app.get("/api/messages/{company_id}/{phone}")
@@ -274,23 +337,36 @@ class MessageSendRequest(BaseModel):
 @app.post("/api/messages/send")
 async def send_message(payload: MessageSendRequest):
     try:
+        # 1. Salva a mensagem no banco de dados (Histórico)
         with db_conn() as conn:
             with conn.cursor() as cur:
-                # Salva a mensagem no banco de dados
                 cur.execute(
-                    "INSERT INTO messages (company_id, phone, direction, text, created_at) VALUES (%s, %s, 'outbound', %s, NOW())",
+                    """INSERT INTO messages (company_id, phone, direction, text, created_at) 
+                       VALUES (%s, %s, 'outbound', %s, NOW())""",
                     (payload.company_id, payload.phone, payload.text)
                 )
             conn.commit()
             
-        # ⚠️ NOTA: É aqui que no futuro você vai colocar o código 
-        # para disparar a mensagem real para a Evolution API / Z-API / etc.
+        # 🚀 2. Disparo real para a API do WhatsApp (Meta)
+        # Chamamos a função que você já configurou no topo do app.py
+        print(f"🚀 Iniciando envio para: {payload.phone}")
+        resultado_meta = disparar_zap(payload.phone, payload.text)
+        print(f"📡 Retorno da Meta: {resultado_meta}")
             
-        return {"status": "success", "message": "Mensagem salva com sucesso"}
-    except Exception as e:
-        print(f"Erro ao enviar mensagem: {e}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        # 3. Retorno de sucesso para o seu Frontend
+        return {
+            "status": "success", 
+            "message": "Mensagem salva e enviada!",
+            "meta_response": resultado_meta
+        }
 
+    except Exception as e:
+        # Se algo falhar (banco ou API), capturamos aqui para o app não cair
+        print(f"❌ Erro crítico em send_message: {e}")
+        return JSONResponse(
+            status_code=500, 
+            content={"error": "Falha ao processar mensagem", "details": str(e)}
+        )
 # ==========================================
 # MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
 # ==========================================
