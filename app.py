@@ -543,45 +543,6 @@ def descobrir_colunas():
         # Usando repr() para mostrar o nome exato do erro se acontecer de novo
         return {"status": "error", "erro_detalhado": repr(e)}
 
-@app.get("/api/listar-usuarios")
-def listar_usuarios():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                # Vai buscar todo mundo que tem permissão de login
-                cur.execute("SELECT email, password, role FROM users;")
-                usuarios = cur.fetchall()
-                return {"status": "success", "usuarios_cadastrados": usuarios}
-    except Exception as e:
-        return {"status": "error", "erro": repr(e)}
-    
-@app.get("/api/criar-usuario-teste")
-def criar_usuario_teste():
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                # 1. Pegamos a primeira empresa que existir no banco
-                cur.execute("SELECT * FROM companies LIMIT 1;")
-                empresa = cur.fetchone()
-                
-                if not empresa:
-                    return {"status": "error", "mensagem": "A tabela 'companies' está vazia! Faça um cadastro normal de cliente no site primeiro."}
-                
-                # 2. Descobrimos qual é o ID real dela (pode ser 'id' ou 'company_id')
-                id_real = empresa.get('id') or empresa.get('company_id')
-                
-                # 3. Criamos o usuário amarrado nessa empresa verdadeira!
-                cur.execute("""
-                    INSERT INTO users (company_id, email, password, role) 
-                    VALUES (%s, 'teste@teste.com', '123456', 'client')
-                    RETURNING email;
-                """, (id_real,))
-                
-                conn.commit()
-                return {"status": "success", "mensagem": f"Usuário teste@teste.com criado com a senha 123456 para a empresa {id_real}!"}
-    except Exception as e:
-        return {"status": "error", "erro": repr(e)}
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
