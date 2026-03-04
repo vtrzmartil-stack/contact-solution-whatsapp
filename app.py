@@ -581,7 +581,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
 EMAIL_REMETENTE = "ctactsolution@gmail.com" 
 # ⚠️ COLOQUE SUA NOVA SENHA AQUI EMBAIXO, TOTALMENTE JUNTA, SEM ESPAÇOS:
-SENHA_APP_GOOGLE = "suanovasenhaaqui" 
+SENHA_APP_GOOGLE = "txaaarwiktppadai" 
 
 def enviar_email_recuperacao(email_destino, nova_senha):
     try:
