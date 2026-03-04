@@ -520,6 +520,22 @@ async def get_flow(flow_id: str):
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}, 500
+    
+@app.get("/api/descobrir-colunas")
+def descobrir_colunas():
+    try:
+        # Vamos ler o esquema (a planta) do seu banco de dados
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users';")
+                colunas = cur.fetchall()
+                
+                # Formatando para ficar fácil de ler
+                lista_colunas = [col[0] for col in colunas]
+                
+                return {"status": "success", "colunas_na_tabela_users": lista_colunas}
+    except Exception as e:
+        return {"status": "error", "erro_detalhado": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
