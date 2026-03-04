@@ -543,6 +543,18 @@ def descobrir_colunas():
         # Usando repr() para mostrar o nome exato do erro se acontecer de novo
         return {"status": "error", "erro_detalhado": repr(e)}
 
+@app.get("/api/listar-usuarios")
+def listar_usuarios():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Vai buscar todo mundo que tem permissão de login
+                cur.execute("SELECT email, password, role FROM users;")
+                usuarios = cur.fetchall()
+                return {"status": "success", "usuarios_cadastrados": usuarios}
+    except Exception as e:
+        return {"status": "error", "erro": repr(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
