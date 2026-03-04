@@ -554,6 +554,23 @@ def listar_usuarios():
                 return {"status": "success", "usuarios_cadastrados": usuarios}
     except Exception as e:
         return {"status": "error", "erro": repr(e)}
+    
+@app.get("/api/criar-usuario-teste")
+def criar_usuario_teste():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # Vamos injetar um usuário válido direto no banco!
+                cur.execute("""
+                    INSERT INTO users (company_id, email, password, role) 
+                    VALUES ('EMP_TESTE_01', 'teste@teste.com', '123456', 'client')
+                    RETURNING email;
+                """)
+                # O commit é vital para salvar a alteração de verdade no banco
+                conn.commit()
+                return {"status": "success", "mensagem": "Usuário teste@teste.com criado com a senha 123456!"}
+    except Exception as e:
+        return {"status": "error", "erro": repr(e)}
 
 if __name__ == "__main__":
     import uvicorn
