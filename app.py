@@ -91,7 +91,7 @@ async def api_login(request: Request):
             with conn.cursor() as cur:
                 # Verifique se o nome das colunas no banco é exatamente este:
                 cur.execute(
-             "SELECT company_id, NOME_CORRETO_AQUI, role, email, password FROM users WHERE email = %s", 
+             "SELECT company_id, nome, role, email, password FROM users WHERE email = %s", 
             (email,)
             )
                 user = cur.fetchone()
@@ -101,7 +101,7 @@ async def api_login(request: Request):
             return {
                 "status": "success",
                 "companyId": user['company_id'],
-                "companyName": user['company_name'],
+                "companyName": user['nome'], # <-- A MUDANÇA FOI AQUI! 
                 "role": user['role'],
                 "email": user['email'] # O React PRECISA disso aqui
             }
