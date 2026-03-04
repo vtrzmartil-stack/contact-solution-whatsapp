@@ -560,15 +560,25 @@ def criar_usuario_teste():
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                # Vamos injetar um usuário válido direto no banco!
+                # 1. Pegamos a primeira empresa que existir no banco
+                cur.execute("SELECT * FROM companies LIMIT 1;")
+                empresa = cur.fetchone()
+                
+                if not empresa:
+                    return {"status": "error", "mensagem": "A tabela 'companies' está vazia! Faça um cadastro normal de cliente no site primeiro."}
+                
+                # 2. Descobrimos qual é o ID real dela (pode ser 'id' ou 'company_id')
+                id_real = empresa.get('id') or empresa.get('company_id')
+                
+                # 3. Criamos o usuário amarrado nessa empresa verdadeira!
                 cur.execute("""
                     INSERT INTO users (company_id, email, password, role) 
-                    VALUES ('EMP_TESTE_01', 'teste@teste.com', '123456', 'client')
+                    VALUES (%s, 'teste@teste.com', '123456', 'client')
                     RETURNING email;
-                """)
-                # O commit é vital para salvar a alteração de verdade no banco
+                """, (id_real,))
+                
                 conn.commit()
-                return {"status": "success", "mensagem": "Usuário teste@teste.com criado com a senha 123456!"}
+                return {"status": "success", "mensagem": f"Usuário teste@teste.com criado com a senha 123456 para a empresa {id_real}!"}
     except Exception as e:
         return {"status": "error", "erro": repr(e)}
 
