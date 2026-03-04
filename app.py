@@ -456,7 +456,7 @@ async def api_send_message(request: Request):
 
     # 1. Buscar as credenciais da Meta no banco (Token e Phone ID)
     # Aqui assumimos que você já tem essas configs ou usa as globais do .env
-    access_token = "EAAL7kEUNnu0BQ7E3oS0333DNnsgYofMwp84JSAKz7doHD7kkkR53GeuYVGfVrC7KAYfMHLaRNDq8HUNTlZBp1y3aoHzmdQULA7hcUsxWlcATZCtfXdMNCEmCePToIyf7IOktm9UBv0R5XxGECDQ95ZBDKlnfoMatLgz3TVzMtBaOLkd24q6dmSB8xu3HoAGVLzyHpmAgZAZCEymtAAu1toNPyVLZCGyZBr0ERlY3oAaTn29RQVZCFjwVge82d3kVFZBnug4Wt4GULytrKTwOTaYIOAReu1T4qViYun40ZD"
+    access_token = "EAAL7kEUNnu0BQxBsXAzf2fZAx10X9t2YcB9cDJzR3F7VoSGAKoYTcpZCDPlzh73ViyZAfvQWxXPLQ4qjqPZAHhaLdCC2CMhyYKlW2ynvK4xIl6olTTcBpfXUjxOMbDtefJOiY8hdsmwgemXtk8I77vZBWvMEZBr4VdZBzacWYZBCeSMGTzyqyOpwoHTrlBAx9pUCiCbhll25LHGY3ekt1cKc1AhjpzACnniRJS3HSVB9z0clog1yXYDsSvv5vvHkiSYvuQZAGGl0ZCJaScj1EVHWiZAH1bn4zlZCGbyZA0QZDZD"
     phone_number_id = "956946084171393"
 
     if not access_token or not phone_number_id:
