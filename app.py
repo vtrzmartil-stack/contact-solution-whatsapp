@@ -221,27 +221,44 @@ def disparar_zap(meu_numero, texto):
     if not num_limpo.startswith("55"):
         num_limpo = f"55{num_limpo}"
     
-    # ⚠️ AQUI: Se for o seu número de teste que buga com o 9, 
-    # você pode forçar a retirada do 9 aqui para testes.
+    # 2. A função que você me enviou (mantenha apenas a disparar_zap para limpar o código)
+def disparar_zap(meu_numero, texto):
+    num_limpo = "".join(filter(str.isdigit, meu_numero))
+    if not num_limpo.startswith("55"):
+        num_limpo = f"55{num_limpo}"
     
     url = f"https://graph.facebook.com/v19.0/{WA_PHONE_ID}/messages"
     headers = {"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"}
     
-    # Se for a primeira mensagem, a Meta exige TEMPLATE (ex: hello_world)
-    # Se já houver conversa aberta, você pode usar "text"
     payload = {
         "messaging_product": "whatsapp",
         "to": num_limpo,
         "type": "text",
         "text": {"body": texto}
     }
-    
     try:
         res = requests.post(url, headers=headers, json=payload)
         return res.json()
     except Exception as e:
         print(f"Erro na API da Meta: {e}")
         return None
+
+# 3. A ROTA que o seu site vai chamar
+@app.post("/api/messages/send")
+async def send_message(payload: MessageSendRequest):
+    try:
+        with db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO messages (company_id, phone, direction, text, created_at) VALUES (%s, %s, 'outbound', %s, NOW())",
+                    (payload.company_id, payload.phone, payload.text)
+                )
+            conn.commit()
+
+        resultado = disparar_zap(payload.phone, payload.text)
+        return {"status": "success", "meta_response": resultado}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
 # ROTA DE MENSAGENS BLINDADA E COM ACESSO ADMIN
@@ -347,13 +364,13 @@ async def send_message(payload: MessageSendRequest):
                 )
             conn.commit()
             
-        # 🚀 2. Disparo real para a API do WhatsApp (Meta)
-        # Chamamos a função que você já configurou no topo do app.py
-        print(f"🚀 Iniciando envio para: {payload.phone}")
+        # 🚀 2. Disparo real para o WhatsApp (O Motor)
+        # Certifique-se de que a função disparar_zap existe no seu app.py
+        print(f"🚀 Enviando Zap para: {payload.phone}")
         resultado_meta = disparar_zap(payload.phone, payload.text)
-        print(f"📡 Retorno da Meta: {resultado_meta}")
+        print(f"📡 Resposta da Meta: {resultado_meta}")
             
-        # 3. Retorno de sucesso para o seu Frontend
+        # 3. Retorno de sucesso para o Painel
         return {
             "status": "success", 
             "message": "Mensagem salva e enviada!",
@@ -361,12 +378,14 @@ async def send_message(payload: MessageSendRequest):
         }
 
     except Exception as e:
-        # Se algo falhar (banco ou API), capturamos aqui para o app não cair
+        # 🛡️ O "ESCUDO": Isso aqui limpa o erro de 'Try statement'
         print(f"❌ Erro crítico em send_message: {e}")
         return JSONResponse(
             status_code=500, 
             content={"error": "Falha ao processar mensagem", "details": str(e)}
         )
+            
+       
 # ==========================================
 # MOTOR DO WEBHOOK (INTELIGÊNCIA DO BOT)
 # ==========================================
@@ -431,14 +450,14 @@ async def webhook(company_id: str, request: Request):
 @app.post("/api/send-message")
 async def api_send_message(request: Request):
     data = await request.json()
-    company_id = data.get("companyId")
+    company_id = data.get("companyId") or data.get(company_id)
     phone = data.get("phone")
     text = data.get("text")
 
     # 1. Buscar as credenciais da Meta no banco (Token e Phone ID)
     # Aqui assumimos que você já tem essas configs ou usa as globais do .env
-    access_token = os.getenv("WHATSAPP_TOKEN")
-    phone_number_id = os.getenv("PHONE_NUMBER_ID")
+    access_token = "EAAL7kEUNnu0BQ7E3oS0333DNnsgYofMwp84JSAKz7doHD7kkkR53GeuYVGfVrC7KAYfMHLaRNDq8HUNTlZBp1y3aoHzmdQULA7hcUsxWlcATZCtfXdMNCEmCePToIyf7IOktm9UBv0R5XxGECDQ95ZBDKlnfoMatLgz3TVzMtBaOLkd24q6dmSB8xu3HoAGVLzyHpmAgZAZCEymtAAu1toNPyVLZCGyZBr0ERlY3oAaTn29RQVZCFjwVge82d3kVFZBnug4Wt4GULytrKTwOTaYIOAReu1T4qViYun40ZD"
+    phone_number_id = "956946084171393"
 
     if not access_token or not phone_number_id:
         return JSONResponse(status_code=500, content={"error": "Configurações do WhatsApp ausentes"})

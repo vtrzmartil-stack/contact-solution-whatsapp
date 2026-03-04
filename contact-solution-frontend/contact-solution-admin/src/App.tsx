@@ -19,6 +19,7 @@ interface UserSession {
 }
 
 function App() {
+  const [selectedContact, setSelectedContact] = useState<any>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [currentView, setCurrentView] = useState<'login' | 'dashboard'>(() => {
@@ -38,42 +39,37 @@ function App() {
 
   const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
   
-  const [newMessage, setNewMessage] = useState("");
-
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
 
-  const handleRecoverPassword = async () => {
-    if (!forgotEmail) {
-      alert("Por favor, digite seu e-mail de cadastro.");
-      return;
+ const [newMessage, setNewMessage] = useState('');
+const handleSendMessage = async () => {
+  if (!newMessage.trim() || !selectedContact) return;
+
+  try {
+    // 🎯 MUDAMOS A URL PARA A ROTA ANTIGA
+    const response = await fetch('http://localhost:8000/api/send-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyId: "MASTER", // Batendo com o que o Python espera
+        phone: selectedContact.phone,
+        text: newMessage
+      }),
+    });
+
+    if (response.ok) {
+      setNewMessage('');
+      // fetchMessages(); // Atualiza a tela
     }
+  } catch (error) {
+    console.error("Erro ao conectar com a API antiga:", error);
+  }
+};
 
-    setLoading(true); // Ativa o carregamento no botão
-    try {
-      const response = await fetch("https://contact-solution-whatsapp-1.onrender.com/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: forgotEmail }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Sucesso: Mostra a senha temporária gerada pelo Python (Fase de Teste)
-        alert(data.message); 
-        setShowForgot(false); // Fecha a janelinha azul
-      } else {
-        // Erro do servidor (E-mail não encontrado, etc)
-        alert(data.message || "Erro ao solicitar nova senha.");
-      }
-    } catch (error) {
-      console.error("Erro na conexão:", error);
-      alert("Não foi possível conectar ao servidor. Verifique sua internet.");
-    } finally {
-      setLoading(false); // Desativa o carregamento
-    }
-  };
+const handleRecoverPassword = async () => {
+    alert("Função de recuperação de senha em manutenção.");
+};
 
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
@@ -408,15 +404,6 @@ useEffect(() => {
   return () => clearInterval(interval);
 }, [selectedLead, session?.companyId]);
 
-// SCROLL AUTOMÁTICO: Sempre que 'chatMessages' mudar, ele desce o scroll
-useEffect(() => {
-    // Busca a div que contém as mensagens
-    const chatBody = document.querySelector('.chat-body');
-    if (chatBody) {
-      // Define o topo do scroll como a altura total da div (vai para o fim)
-      chatBody.scrollTop = chatBody.scrollHeight;
-    }
-  }, [chatMessages]);
 
   useEffect(() => {
     if (currentView === 'dashboard') {
@@ -993,6 +980,95 @@ useEffect(() => {
                     })}
                     {chatMessages.length === 0 && <p style={{ textAlign: 'center', opacity: 0.5, marginTop: '20px' }}>Sem mensagens.</p>}
                   </div>
+                  
+                  {/* CORPO DAS MENSAGENS */}
+{/* 🚀 ÁREA DE ENVIO DE MENSAGENS */}
+<div style={{ padding: '15px', background: '#1e293b', display: 'flex', gap: '10px', borderTop: '1px solid #334155' }}>
+  <input
+    type="text"
+    value={newMessage}
+    onChange={(e) => setNewMessage(e.target.value)}
+    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+    placeholder="Digite sua mensagem..."
+    style={{ 
+      flex: 1, 
+      padding: '10px', 
+      borderRadius: '8px', 
+      border: 'none', 
+      background: '#0f172a', 
+      color: 'white', 
+      outline: 'none' 
+    }}
+  />
+  <button 
+    onClick={handleSendMessage}
+    style={{ 
+      padding: '10px 20px', 
+      background: '#3b82f6', 
+      color: 'white', 
+      borderRadius: '8px', 
+      border: 'none', 
+      cursor: 'pointer', 
+      fontWeight: 'bold' 
+    }}
+  >
+    Enviar
+  </button>
+</div>
+
+{/* 🚀 RODAPÉ DE ENVIO DE MENSAGENS */}
+          <div style={{ padding: '15px', background: '#1e293b', display: 'flex', gap: '10px', borderTop: '1px solid #334155' }}>
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Digite sua mensagem..."
+              style={{ flex: 1, padding: '10px', borderRadius: '8px', border: 'none', background: '#0f172a', color: 'white', outline: 'none' }}
+            />
+            <button 
+              onClick={handleSendMessage}
+              style={{ padding: '10px 20px', background: '#3b82f6', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              Enviar
+            </button>
+          </div>
+
+
+
+{/* 🚀 NOVO: ÁREA DE ENVIO DE MENSAGENS */}
+<div style={{ padding: '15px', background: '#1e293b', display: 'flex', gap: '10px', borderTop: '1px solid #334155' }}>
+  <input
+    type="text"
+    value={newMessage}
+    onChange={(e) => setNewMessage(e.target.value)}
+    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+    placeholder="Digite sua mensagem..."
+    style={{
+      flex: 1,
+      padding: '12px',
+      borderRadius: '8px',
+      border: 'none',
+      background: '#0f172a',
+      color: 'white',
+      outline: 'none'
+    }}
+  />
+  <button 
+    onClick={handleSendMessage}
+    style={{
+      padding: '10px 20px',
+      background: '#3b82f6',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontWeight: 'bold'
+    }}
+  >
+    Enviar
+  </button>
+</div>
 
                   {/* RODAPÉ COM TECLADO E BOTÃO ATIVOS */}
                   <div className="chat-footer" style={{ display: 'flex', padding: '15px', background: '#1e293b', borderTop: '1px solid #334155' }}>
