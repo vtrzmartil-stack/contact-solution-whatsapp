@@ -576,60 +576,12 @@ def descobrir_colunas():
         # Usando repr() para mostrar o nome exato do erro se acontecer de novo
         return {"status": "error", "erro_detalhado": repr(e)}
 
-# --- ROTA: ESQUECI MINHA SENHA (FASE 1 - SEM GMAIL) ---
-@app.post("/api/auth/forgot-password")
-async def forgot_password(request: Request):
-    try:
-        data = await request.json()
-        email = data.get("email")
-
-        if not email:
-            return JSONResponse(status_code=400, content={"status": "error", "message": "E-mail não fornecido."})
-
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                # 1. Verifica se o usuário existe no banco
-                cur.execute("SELECT email FROM users WHERE email = %s", (email,))
-                user = cur.fetchone()
-
-                if not user:
-                    # Se não achar, barra aqui
-                    return JSONResponse(
-                        status_code=404, 
-                        content={"status": "error", "message": "E-mail não encontrado no sistema."}
-                    )
-
-                # 2. Gera uma senha temporária aleatória de 6 números (Ex: 849201)
-                nova_senha = ''.join(random.choices(string.digits, k=6))
-                
-                # Criptografa para a tabela companies
-                senha_criptografada = hash_password(nova_senha)
-
-                # 3. Atualiza as DUAS tabelas (igual fizemos no change-password)
-                cur.execute("UPDATE users SET password = %s WHERE email = %s", (nova_senha, email))
-                cur.execute("UPDATE companies SET password = %s WHERE email = %s", (senha_criptografada, email))
-                conn.commit()
-
-        # 4. O CARTEIRO FAKE (Simulação enquanto o Google não libera)
-        print("="*50)
-        print(f"📧 SIMULAÇÃO DE E-MAIL: A nova senha para {email} é -> {nova_senha}")
-        print("="*50)
-
-        # Mandamos a senha na própria mensagem de sucesso só para você conseguir testar hoje!
-        return {
-            "status": "success", 
-            "message": f"✅ [TESTE] Sua nova senha gerada é: {nova_senha}"
-        }
-
-    except Exception as e:
-        print(f"Erro no forgot-password: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "message": "Erro interno no servidor"})
-    
-# --- CONFIGURAÇÕES DO GMAIL ---
+# --- CONFIGURAÇÕES DO GMAIL (Sempre ANTES da rota) ---
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465
-EMAIL_REMETENTE = "ctactsolution@gmail.com" # ⚠️ Altere aqui
-SENHA_APP_GOOGLE = "myaj nwyy hizd jrbv" # ⚠️ Altere aqui (sem espaços)
+EMAIL_REMETENTE = "ctactsolution@gmail.com" 
+# ⚠️ COLOQUE SUA NOVA SENHA AQUI EMBAIXO, TOTALMENTE JUNTA, SEM ESPAÇOS:
+SENHA_APP_GOOGLE = "suanovasenhaaqui" 
 
 def enviar_email_recuperacao(email_destino, nova_senha):
     try:
@@ -660,6 +612,51 @@ def enviar_email_recuperacao(email_destino, nova_senha):
     except Exception as e:
         print(f"❌ Erro ao enviar e-mail: {e}")
         return False
+
+
+# --- ROTA: ESQUECI MINHA SENHA (FASE 2 - COM GMAIL REAL) ---
+@app.post("/api/auth/forgot-password")
+async def forgot_password(request: Request):
+    try:
+        data = await request.json()
+        email = data.get("email")
+
+        if not email:
+            return JSONResponse(status_code=400, content={"status": "error", "message": "E-mail não fornecido."})
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Verifica se o usuário existe
+                cur.execute("SELECT email FROM users WHERE email = %s", (email,))
+                user = cur.fetchone()
+
+                if not user:
+                    return JSONResponse(
+                        status_code=404, 
+                        content={"status": "error", "message": "E-mail não encontrado no sistema."}
+                    )
+
+                # 2. Gera a senha
+                nova_senha = ''.join(random.choices(string.digits, k=6))
+                senha_criptografada = hash_password(nova_senha)
+
+                # 3. Atualiza o banco
+                cur.execute("UPDATE users SET password = %s WHERE email = %s", (nova_senha, email))
+                cur.execute("UPDATE companies SET password = %s WHERE email = %s", (senha_criptografada, email))
+                conn.commit()
+
+        # 4. O CARTEIRO REAL (Chama a função ali de cima)
+        email_enviado = enviar_email_recuperacao(email, nova_senha)
+
+        # 5. O Retorno correto (SEM MOSTRAR A SENHA NO POP-UP!)
+        if email_enviado:
+            return {"status": "success", "message": "✅ E-mail enviado! Verifique sua caixa de entrada e spam."}
+        else:
+            return JSONResponse(status_code=500, content={"status": "error", "message": "Senha alterada, mas falha ao enviar o e-mail."})
+
+    except Exception as e:
+        print(f"Erro no forgot-password: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": "Erro interno no servidor"})
 
 if __name__ == "__main__":
     import uvicorn
