@@ -21,6 +21,8 @@ import json
 from pydantic import BaseModel
 import uuid
 
+import random
+import string
 load_dotenv()
 
 # ---------------------------
@@ -569,6 +571,55 @@ def descobrir_colunas():
     except Exception as e:
         # Usando repr() para mostrar o nome exato do erro se acontecer de novo
         return {"status": "error", "erro_detalhado": repr(e)}
+
+# --- ROTA: ESQUECI MINHA SENHA (FASE 1 - SEM GMAIL) ---
+@app.post("/api/auth/forgot-password")
+async def forgot_password(request: Request):
+    try:
+        data = await request.json()
+        email = data.get("email")
+
+        if not email:
+            return JSONResponse(status_code=400, content={"status": "error", "message": "E-mail não fornecido."})
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                # 1. Verifica se o usuário existe no banco
+                cur.execute("SELECT email FROM users WHERE email = %s", (email,))
+                user = cur.fetchone()
+
+                if not user:
+                    # Se não achar, barra aqui
+                    return JSONResponse(
+                        status_code=404, 
+                        content={"status": "error", "message": "E-mail não encontrado no sistema."}
+                    )
+
+                # 2. Gera uma senha temporária aleatória de 6 números (Ex: 849201)
+                nova_senha = ''.join(random.choices(string.digits, k=6))
+                
+                # Criptografa para a tabela companies
+                senha_criptografada = hash_password(nova_senha)
+
+                # 3. Atualiza as DUAS tabelas (igual fizemos no change-password)
+                cur.execute("UPDATE users SET password = %s WHERE email = %s", (nova_senha, email))
+                cur.execute("UPDATE companies SET password = %s WHERE email = %s", (senha_criptografada, email))
+                conn.commit()
+
+        # 4. O CARTEIRO FAKE (Simulação enquanto o Google não libera)
+        print("="*50)
+        print(f"📧 SIMULAÇÃO DE E-MAIL: A nova senha para {email} é -> {nova_senha}")
+        print("="*50)
+
+        # Mandamos a senha na própria mensagem de sucesso só para você conseguir testar hoje!
+        return {
+            "status": "success", 
+            "message": f"✅ [TESTE] Sua nova senha gerada é: {nova_senha}"
+        }
+
+    except Exception as e:
+        print(f"Erro no forgot-password: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": "Erro interno no servidor"})
 
 if __name__ == "__main__":
     import uvicorn

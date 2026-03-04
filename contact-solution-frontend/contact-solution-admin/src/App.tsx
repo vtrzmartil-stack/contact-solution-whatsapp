@@ -40,6 +40,41 @@ function App() {
   
   const [newMessage, setNewMessage] = useState("");
 
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+
+  const handleRecoverPassword = async () => {
+    if (!forgotEmail) {
+      alert("Por favor, digite seu e-mail de cadastro.");
+      return;
+    }
+
+    setLoading(true); // Ativa o carregamento no botão
+    try {
+      const response = await fetch("https://contact-solution-whatsapp-1.onrender.com/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Sucesso: Mostra a senha temporária gerada pelo Python (Fase de Teste)
+        alert(data.message); 
+        setShowForgot(false); // Fecha a janelinha azul
+      } else {
+        // Erro do servidor (E-mail não encontrado, etc)
+        alert(data.message || "Erro ao solicitar nova senha.");
+      }
+    } catch (error) {
+      console.error("Erro na conexão:", error);
+      alert("Não foi possível conectar ao servidor. Verifique sua internet.");
+    } finally {
+      setLoading(false); // Desativa o carregamento
+    }
+  };
+
   // ==========================================
   // FUNÇÕES DE COMUNICAÇÃO COM O BACKEND
   // ==========================================
@@ -469,24 +504,9 @@ useEffect(() => {
       }}>
         
         {/* LADO ESQUERDO: LOGIN */}
-        <div style={{
-          flex: '1',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '40px',
-          zIndex: 2
-        }}>
-          <div style={{
-            width: '100%',
-            maxWidth: '400px',
-            backgroundColor: 'rgba(30, 41, 59, 0.5)', 
-            padding: '40px',
-            borderRadius: '24px',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-          }}>
+        <div style={{ flex: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px', zIndex: 2 }}>
+          <div style={{ width: '100%', maxWidth: '400px', backgroundColor: 'rgba(30, 41, 59, 0.5)', padding: '40px', borderRadius: '24px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.1)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+            
             <div style={{ marginBottom: '32px', textAlign: 'center' }}>
               <h2 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 8px 0' }}>Acesso ao Sistema</h2>
               <p style={{ color: '#94A3B8', fontSize: '14px' }}>Bem-vindo à Contact Solution</p>
@@ -501,6 +521,17 @@ useEffect(() => {
               <div style={{ textAlign: 'left' }}>
                 <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Senha</label>
                 <input type="password" name="password" required placeholder="••••••••" style={inputStyle} />
+                
+                {/* LINK DE RECUPERAÇÃO */}
+                <div style={{ textAlign: 'right', marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgot(true)}
+                    style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: '12px', cursor: 'pointer', padding: 0 }}
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
               </div>
 
               <button type="submit" disabled={loading} style={buttonStyle}>
@@ -513,6 +544,94 @@ useEffect(() => {
             </p>
           </div>
         </div>
+
+{/* 🛡️ MODAL DE RECUPERAÇÃO DE SENHA (DARK MODE PREMIUM) */}
+      {showForgot && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: '#1E293B',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            padding: '40px',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '400px',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            animation: 'fadeIn 0.3s ease-out'
+          }}>
+            <h2 style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>
+              Recuperar Senha
+            </h2>
+            <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
+              Informe seu e-mail de cadastro. Enviaremos uma nova senha temporária para você acessar o sistema.
+            </p>
+            
+            <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+              <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', marginBottom: '8px', textTransform: 'uppercase' }}>
+                E-mail de Recuperação
+              </label>
+              <input
+                type="email"
+                placeholder="seu@email.com"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                style={{ 
+                  ...inputStyle, 
+                  width: '100%', 
+                  boxSizing: 'border-box' 
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button 
+                type="button"
+                onClick={handleRecoverPassword}
+                disabled={loading}
+                style={{
+                  ...buttonStyle,
+                  width: '100%',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1
+                }}
+              >
+                {loading ? 'Processando...' : 'Gerar Nova Senha'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setShowForgot(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94A3B8',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  padding: '10px',
+                  transition: 'color 0.2s'
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = 'white')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#94A3B8')}
+              >
+                Cancelar e Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* LADO DIREITO: BRANDING (A parte bonita!) */}
         <div style={{
