@@ -11,7 +11,7 @@ PHONE_NUMBER_ID = "956946084171393"
 # Coloque o seu número que você verificou lá no painel. 
 # Formato: Código do País (55) + DDD + Número. Tudo junto, sem + ou traços.
 # Exemplo: "5511999998888"
-NUMERO_DESTINO = "5511964816315" 
+NUMERO_DESTINO = "5511991449727" 
 # ==========================================
 
 # A URL oficial da API da Meta
