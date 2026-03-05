@@ -475,6 +475,39 @@ useEffect(() => {
   return () => clearInterval(interval);
 }, [selectedLead, session?.companyId]);
 
+// 📡 NOVA ANTENA: Busca os funis salvos quando você entra na aba de Fluxo
+useEffect(() => {
+  const carregarFunis = async () => {
+    // Só busca se o usuário estiver logado e na aba certa
+    if (!session?.companyId || activeTab !== 'flow') return;
+    
+    try {
+      console.log("🔄 Buscando funis no banco de dados...");
+      const response = await fetch(`${API_URL}/api/config/flow?companyId=${session.companyId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Se o banco retornar funis, a gente popula a nossa lista
+        if (data && data.length > 0) {
+          setFunisSalvos(data);
+          
+          // Se não tiver nenhum funil selecionado ainda, seleciona o primeiro da lista
+          if (!currentFlowId) {
+            setCurrentFlowId(data[0].id);
+            setCurrentFlowName(data[0].nome);
+            setFlowMessages(data[0].messages || Array(9).fill(''));
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao resgatar seus funis:", err);
+    }
+  };
+
+  carregarFunis();
+}, [session?.companyId, activeTab]); // Dispara sempre que mudar de aba ou de usuário
+
 
   useEffect(() => {
     if (currentView === 'dashboard') {
