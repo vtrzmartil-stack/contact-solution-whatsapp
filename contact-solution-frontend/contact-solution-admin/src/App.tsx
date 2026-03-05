@@ -328,18 +328,26 @@ const handleRecoverPassword = async () => {
   };
 
   // 8. SALVAR FLUXO
-  const handleDeployFlow = async () => {
-    if (!session) return;
+ const handleDeployFlow = async () => {
+    if (!session || !currentFlowId) return; // Só salva se tiver um funil selecionado
     setLoading(true);
     try {
       const response = await fetch(`${API_URL}/api/config/flow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: session.companyId, flow_messages: flowMessages })
+        body: JSON.stringify({ 
+          companyId: session.companyId, 
+          flowId: currentFlowId,     // Agora o banco sabe QUAL funil é
+          flowName: currentFlowName, // O nome que você deu (ex: "Vendas Quentes")
+          flow_messages: flowMessages 
+        })
       });
-      if (response.ok) alert("Fluxo salvo e atualizado!");
-    } catch (error) { alert("Erro ao salvar."); }
-    finally { setLoading(false); }
+      if (response.ok) alert("Fluxo '" + currentFlowName + "' salvo com sucesso!");
+    } catch (error) { 
+      alert("Erro ao conectar com o servidor."); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
 // 9. TROCAR SENHA (VERSÃO BLINDADA)
