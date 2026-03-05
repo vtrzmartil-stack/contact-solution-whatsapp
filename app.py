@@ -644,20 +644,34 @@ async def update_password(request: Request):
             content={"status": "error", "message": "Erro interno no servidor."}
         )
 
-# --- ROTA PARA BUSCAR O FLUXO DO ROBÔ ---
-@app.get("/api/config/flow/{flow_id}")
-async def get_flow(flow_id: str):
+@app.get("/api/config/flow")
+async def get_all_flows(companyId: str):
     try:
-        # Por enquanto, vamos retornar um fluxo vazio só para o React parar de dar erro
-        # No futuro, aqui você vai buscar os dados reais do banco de dados
-        return {
-            "status": "success",
-            "flow_id": flow_id,
-            "nodes": [],  # Caixinhas do fluxo
-            "edges": []   # Linhas conectando as caixinhas
-        }
+        # 🔍 Aqui o Python vai no banco buscar os funis dessa empresa
+        # Se você usa SQLAlchemy, seria algo como: 
+        # flows = db.query(Flow).filter(Flow.company_id == companyId).all()
+        
+        # Vou simular o que o banco retornaria para o React entender:
+        # (Depois você troca isso pela sua consulta real ao SQL)
+        results = [
+            {
+                "id": "1",
+                "nome": "Fluxo Principal",
+                "messages": ["Olá!", "Como podemos ajudar?", "", "", "", "", "", "", ""]
+            },
+            {
+                "id": "2",
+                "nome": "Recuperação de Boleto",
+                "messages": ["Vimos que seu boleto venceu...", "Podemos gerar outro?", "", "", "", "", "", "", ""]
+            }
+        ]
+        
+        return results # O React vai receber essa lista e preencher o select!
+        
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        print(f"❌ Erro ao buscar funis: {e}")
+        return JSONResponse(status_code=500, content={"message": "Erro ao buscar funis"})
+    
     
 @app.get("/api/descobrir-colunas")
 def descobrir_colunas():
