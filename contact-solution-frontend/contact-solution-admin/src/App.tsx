@@ -477,36 +477,30 @@ useEffect(() => {
 
 // 📡 NOVA ANTENA: Busca os funis salvos quando você entra na aba de Fluxo
 useEffect(() => {
-  const carregarFunis = async () => {
-    // Só busca se o usuário estiver logado e na aba certa
+  const carregarDados = async () => {
     if (!session?.companyId || activeTab !== 'flow') return;
-    
+
     try {
-      console.log("🔄 Buscando funis no banco de dados...");
-      const response = await fetch(`${API_URL}/api/config/flow?companyId=${session.companyId}`);
+      const res = await fetch(`${API_URL}/api/config/flow?companyId=${session.companyId}`);
+      const data = await res.json();
       
-      if (response.ok) {
-        const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setFunisSalvos(data); // Preenche a lista de funis
         
-        // Se o banco retornar funis, a gente popula a nossa lista
-        if (data && data.length > 0) {
-          setFunisSalvos(data);
-          
-          // Se não tiver nenhum funil selecionado ainda, seleciona o primeiro da lista
-          if (!currentFlowId) {
-            setCurrentFlowId(data[0].id);
-            setCurrentFlowName(data[0].nome);
-            setFlowMessages(data[0].messages || Array(9).fill(''));
-          }
+        // Se ainda não selecionamos nenhum, pega o primeiro da lista
+        if (!currentFlowId) {
+          setCurrentFlowId(data[0].id);
+          setCurrentFlowName(data[0].nome);
+          setFlowMessages(data[0].messages);
         }
       }
     } catch (err) {
-      console.error("Erro ao resgatar seus funis:", err);
+      console.error("Erro ao carregar funis:", err);
     }
   };
 
-  carregarFunis();
-}, [session?.companyId, activeTab]); // Dispara sempre que mudar de aba ou de usuário
+  carregarDados();
+}, [activeTab, session?.companyId]);
 
 
   useEffect(() => {
