@@ -260,6 +260,36 @@ async def send_message(payload: MessageSendRequest):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# ==============================================================================
+# 🗄️ GERENCIAMENTO DE TABELAS DO BANCO DE DADOS (POSTGRESQL)
+# Este bloco garante que as tabelas necessárias existam sempre que o servidor ligar.
+# Local: Geralmente logo após as configurações de conexão do DB.
+# ==============================================================================
+def setup_database_tables():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Criando a tabela de Múltiplos Funis (se ela não existir)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS flows (
+                id TEXT PRIMARY KEY,
+                company_id TEXT, 
+                name TEXT NOT NULL,
+                messages JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        print("✅ [DB] Tabela 'flows' pronta para uso!")
+    except Exception as e:
+        print(f"❌ [DB] Erro ao configurar tabelas: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+# 🚀 Executa a configuração ao iniciar o app.py
+setup_database_tables()
+
 # ==========================================
 # ROTA DE MENSAGENS BLINDADA E COM ACESSO ADMIN
 # ==========================================
@@ -672,7 +702,7 @@ async def get_all_flows(companyId: str):
         print(f"❌ Erro ao buscar funis: {e}")
         return JSONResponse(status_code=500, content={"message": "Erro ao buscar funis"})
     
-    
+
 @app.get("/api/descobrir-colunas")
 def descobrir_colunas():
     try:
