@@ -113,7 +113,7 @@ const handleRecoverPassword = async () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          companyId: "MASTER", 
+          companyId: session?.companyId,
           phone: manualPhone.replace(/\D/g, ''), // Deixa só os números
           text: manualMessage
         }),
