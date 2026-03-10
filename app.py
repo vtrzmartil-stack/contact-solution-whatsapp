@@ -702,6 +702,13 @@ async def get_all_flows(companyId: str):
         print(f"❌ Erro ao buscar funis: {e}")
         return JSONResponse(status_code=500, content={"message": "Erro ao buscar funis"})
     
+@app.get("/api/force-db")
+async def force_db_creation():
+    try:
+        setup_database_tables() # Chama a nossa função de ontem
+        return {"status": "sucesso", "mensagem": "Tabelas verificadas/criadas com sucesso no Postgres!"}
+    except Exception as e:
+        return {"status": "erro", "mensagem": str(e)}
 
 @app.get("/api/descobrir-colunas")
 def descobrir_colunas():
