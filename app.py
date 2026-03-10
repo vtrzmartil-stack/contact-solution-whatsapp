@@ -439,7 +439,7 @@ async def webhook(company_id: str, request: Request):
 
         with db_conn() as conn:
             with conn.cursor() as cur:
-                # 1. Registrar Mensagem
+                # 1. Registrar Mensagem do Cliente (Inbound)
                 cur.execute("INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
                             (company_id, phone, 'inbound', text))
                 
@@ -447,29 +447,51 @@ async def webhook(company_id: str, request: Request):
                 cur.execute("SELECT * FROM conversations WHERE company_id=%s AND phone=%s", (company_id, phone))
                 conv = cur.fetchone()
                 
+                # Se for um cliente novo, começa no passo '0' (Primeira mensagem do funil)
                 if not conv:
-                    cur.execute("INSERT INTO conversations (company_id, phone, status_funil, step) VALUES (%s, %s, 'bot', 'nome') RETURNING *",
+                    cur.execute("INSERT INTO conversations (company_id, phone, status_funil, step) VALUES (%s, %s, 'bot', '0') RETURNING *",
                                 (company_id, phone))
                     conv = cur.fetchone()
 
-                # 3. Lógica de Perguntas (Steps) se o Bot estiver Ativo
-                if conv['status'] == 'open':
-                    steps = ['nome', 'email', 'produto', 'cep', 'confirm_cep', 'final']
-                    current_step = conv['step']
+                # 3. Lógica do Funil Dinâmico (Se o Bot estiver Ativo)
+                # Obs: Aqui assumimos que 'status' ou 'status_funil' controla se o bot fala. 
+                # Adapte o nome da coluna se for diferente no seu banco.
+                if conv.get('status_funil') == 'bot' or conv.get('status') == 'open':
                     
-                    # Salva o dado do cliente baseado no step anterior
-                    update_field = None
-                    if current_step == 'nome': update_field = "nome"
-                    elif current_step == 'email': update_field = "email"
+                    # A) Busca o funil que acabamos de salvar no React!
+                    cur.execute("SELECT messages FROM flows WHERE company_id=%s LIMIT 1", (company_id,))
+                    flow_row = cur.fetchone()
                     
-                    if update_field:
-                        cur.execute(f"UPDATE conversations SET {update_field}=%s WHERE id=%s", (text, conv['id']))
-
-                    # Avançar para o próximo step
-                    next_idx = steps.index(current_step) + 1 if current_step in steps else 0
-                    next_step = steps[next_idx] if next_idx < len(steps) else 'final'
-                    
-                    cur.execute("UPDATE conversations SET step=%s, updated_at=NOW() WHERE id=%s", (next_step, conv['id']))
+                    if flow_row:
+                        # Pega a lista de mensagens (O banco já devolve como lista graças ao JSONB)
+                        flow_messages = flow_row['messages'] if isinstance(flow_row, dict) else flow_row[0]
+                        
+                        # Converte o passo atual para número (ex: '0' -> 0)
+                        current_step = int(conv['step']) if str(conv['step']).isdigit() else 0
+                        
+                        # B) Verifica se ainda temos mensagens no funil para enviar
+                        if current_step < len(flow_messages):
+                            mensagem_do_robo = flow_messages[current_step]
+                            
+                            # Só envia se a caixa de texto não estiver vazia no React
+                            if mensagem_do_robo.strip() != "":
+                                
+                                # ==========================================
+                                # ⚠️ AQUI ENTRA A FUNÇÃO DE ENVIAR PRO WHATSAPP
+                                # Exemplo: enviar_mensagem_wpp(phone, mensagem_do_robo)
+                                # ==========================================
+                                
+                                # Salva o que o robô falou no banco de dados (Outbound)
+                                cur.execute("INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
+                                            (company_id, phone, 'outbound', mensagem_do_robo))
+                            
+                            # C) Avança o cliente para o próximo passo da conversa
+                            next_step = str(current_step + 1)
+                            cur.execute("UPDATE conversations SET step=%s, updated_at=NOW() WHERE id=%s", (next_step, conv['id']))
+                            
+                        else:
+                            # Se acabaram as mensagens do funil, podemos transferir para um humano
+                            cur.execute("UPDATE conversations SET status_funil='humano', updated_at=NOW() WHERE id=%s", (conv['id'],))
                 
             conn.commit()
         return {"status": "ok"}
