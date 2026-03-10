@@ -679,6 +679,9 @@ async def update_password(request: Request):
 # ==========================================
 @app.get("/api/config/flow")
 async def get_all_flows(companyId: str):
+    # 👇 COLOQUE ESTE PRINT AQUI PARA VERMOS O QUE ESTÁ CHEGANDO
+    print(f"🚨 ALERTA: O React está pedindo os funis da empresa: '{companyId}'")
+    
     conn = get_db_connection() 
     cur = conn.cursor()
     try:
@@ -695,6 +698,10 @@ async def get_all_flows(companyId: str):
                 "nome": row[1],
                 "messages": row[2] 
             })
+            
+        # 👇 COLOQUE ESTE PRINT AQUI PARA VERMOS O QUE O BANCO ACHOU
+        print(f"🚨 ALERTA: O Banco encontrou {len(flows)} funis para esta empresa!")
+        
         return flows
     except Exception as e:
         print(f"Erro ao buscar funis: {e}")
