@@ -48,7 +48,7 @@ function App() {
   // 3. A sua variável original, intacta, para não quebrar o seu HTML!
   const [flowMessages, setFlowMessages] = useState<string[]>(Array(9).fill(''));
 
-  const API_URL = "https://contact-solution-whatsapp-1.onrender.com";
+  const API_URL = "http://localhost:8000";
   
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
