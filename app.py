@@ -679,9 +679,6 @@ async def update_password(request: Request):
 # ==========================================
 @app.get("/api/config/flow")
 async def get_all_flows(companyId: str):
-    # 👇 COLOQUE ESTE PRINT AQUI PARA VERMOS O QUE ESTÁ CHEGANDO
-    print(f"🚨 ALERTA: O React está pedindo os funis da empresa: '{companyId}'")
-    
     conn = get_db_connection() 
     cur = conn.cursor()
     try:
@@ -693,15 +690,21 @@ async def get_all_flows(companyId: str):
         
         flows = []
         for row in rows:
-            flows.append({
-                "id": row[0],
-                "nome": row[1],
-                "messages": row[2] 
-            })
-            
-        # 👇 COLOQUE ESTE PRINT AQUI PARA VERMOS O QUE O BANCO ACHOU
-        print(f"🚨 ALERTA: O Banco encontrou {len(flows)} funis para esta empresa!")
-        
+            # Se o seu banco devolve um Dicionário (o mais provável pelo erro "0")
+            if isinstance(row, dict):
+                flows.append({
+                    "id": row.get("id"),
+                    "nome": row.get("name"),
+                    "messages": row.get("messages")
+                })
+            # Se o seu banco devolve uma Tupla (lista simples)
+            else:
+                flows.append({
+                    "id": row[0],
+                    "nome": row[1],
+                    "messages": row[2] 
+                })
+                
         return flows
     except Exception as e:
         print(f"Erro ao buscar funis: {e}")
