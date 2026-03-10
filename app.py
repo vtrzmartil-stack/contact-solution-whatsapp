@@ -674,33 +674,68 @@ async def update_password(request: Request):
             content={"status": "error", "message": "Erro interno no servidor."}
         )
 
+# ==========================================
+# 1. ROTA PARA BUSCAR OS FUNIS (Resolve o 404)
+# ==========================================
 @app.get("/api/config/flow")
 async def get_all_flows(companyId: str):
+    conn = get_db_connection() 
+    cur = conn.cursor()
     try:
-        # 🔍 Aqui o Python vai no banco buscar os funis dessa empresa
-        # Se você usa SQLAlchemy, seria algo como: 
-        # flows = db.query(Flow).filter(Flow.company_id == companyId).all()
+        cur.execute(
+            "SELECT id, name, messages FROM flows WHERE company_id = %s",
+            (companyId,)
+        )
+        rows = cur.fetchall()
         
-        # Vou simular o que o banco retornaria para o React entender:
-        # (Depois você troca isso pela sua consulta real ao SQL)
-        results = [
-            {
-                "id": "1",
-                "nome": "Fluxo Principal",
-                "messages": ["Olá!", "Como podemos ajudar?", "", "", "", "", "", "", ""]
-            },
-            {
-                "id": "2",
-                "nome": "Recuperação de Boleto",
-                "messages": ["Vimos que seu boleto venceu...", "Podemos gerar outro?", "", "", "", "", "", "", ""]
-            }
-        ]
-        
-        return results # O React vai receber essa lista e preencher o select!
-        
+        flows = []
+        for row in rows:
+            flows.append({
+                "id": row[0],
+                "nome": row[1],
+                "messages": row[2] 
+            })
+        return flows
     except Exception as e:
-        print(f"❌ Erro ao buscar funis: {e}")
-        return JSONResponse(status_code=500, content={"message": "Erro ao buscar funis"})
+        print(f"Erro ao buscar funis: {e}")
+        return []
+    finally:
+        cur.close()
+        conn.close()
+
+# ==========================================
+# 2. ROTA PARA SALVAR OS FUNIS (Resolve o 405)
+# ==========================================
+@app.post("/api/config/flow")
+async def save_flow(request: Request):
+    data = await request.json()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        query = """
+            INSERT INTO flows (id, company_id, name, messages)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (id) 
+            DO UPDATE SET 
+                name = EXCLUDED.name,
+                messages = EXCLUDED.messages,
+                updated_at = CURRENT_TIMESTAMP
+        """
+        cur.execute(query, (
+            data['flowId'],
+            data['companyId'],
+            data['flowName'],
+            json.dumps(data['flow_messages']) 
+        ))
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        conn.rollback()
+        print(f"Erro ao salvar no Postgres: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+    finally:
+        cur.close()
+        conn.close()
     
 @app.get("/api/force-db")
 async def force_db_creation():
