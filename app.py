@@ -186,6 +186,39 @@ async def update_lead_status(lead_id: int, data: StatusUpdate):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # ==========================================
+# 📱 MOTOR DE ENVIO (WHATSAPP CLOUD API)
+# ==========================================
+# Aqui vão as suas credenciais oficiais do painel da Meta:
+WHATSAPP_TOKEN = "SEU_TOKEN_PERMANENTE_AQUI"
+PHONE_NUMBER_ID = "SEU_ID_DO_NUMERO_AQUI"
+
+def enviar_mensagem_wpp(numero_destino, texto_mensagem):
+    # Usamos a versão 18.0 da API (pode ser 19.0 dependendo de quando você criou o app)
+    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    # O pacote no formato exato que a Meta exige
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": numero_destino,
+        "type": "text",
+        "text": {"body": texto_mensagem}
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        # Imprime no terminal se deu certo ou se a Meta bloqueou
+        print(f"📡 Status Meta: {response.status_code} | Resposta: {response.text}")
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Erro crítico ao conectar com a Meta: {e}")
+        return False
+
+# ==========================================
 # 2. ROTA DE ENVIO MENSAGENS WPP
 # ==========================================
 
