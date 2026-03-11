@@ -510,8 +510,9 @@ async def webhook(company_id: str, request: Request):
                             if mensagem_do_robo.strip() != "":
                                 
                                 # ==========================================
-                                # ⚠️ AQUI ENTRA A FUNÇÃO DE ENVIAR PRO WHATSAPP
-                                # Exemplo: enviar_mensagem_wpp(phone, mensagem_do_robo)
+                                cur.execute("UPDATE conversations SET status_funil='humano', updated_at=NOW() WHERE id=%s", (conv['id'],))
+                                
+                                
                                 # ==========================================
                                 
                                 # Salva o que o robô falou no banco de dados (Outbound)
