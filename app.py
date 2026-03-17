@@ -659,30 +659,31 @@ async def api_send_message(request: Request):
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    dados_brutos = await request.json()
-    print("🚀 CHEGOU DA META:", dados_brutos)   
     data = await request.json()
+    print("🚀 CHEGOU DA META:", data) 
     
     try:
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
         
-        # Só processa se for uma MENSAGEM de um cliente (ignora confirmações de leitura/entrega)
+        # 1. Só processa se houver mensagens (ignora status de entrega/leitura)
         if "messages" in value:
             import json
-            import requests # Necessário para enviar a mensagem real
+            import requests
             
             message = value["messages"][0]
             sender_phone = message["from"]
-            text_received = message.get("text", {}).get("body", "").lower()
             
+            # Garante que pegamos o texto independente de como venha
+            text_received = message.get("text", {}).get("body", "")
             print(f"📩 Cliente {sender_phone} enviou: {text_received}")
 
-            # 1. BUSCAR A RESPOSTA NO SUPABASE
+            # 2. BUSCAR A RESPOSTA NO SUPABASE
             conn = get_db_connection()
             cur = conn.cursor()
             
+            # Busca o funil da MASTER
             cur.execute("SELECT messages FROM flows WHERE company_id = 'MASTER' LIMIT 1")
             row = cur.fetchone()
             
@@ -691,20 +692,17 @@ async def whatsapp_webhook(request: Request):
                 funil_data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
                 
                 if isinstance(funil_data, list) and len(funil_data) > 0:
+                    # Pega a primeira mensagem do funil
                     msg_obj = funil_data[0]
-                    resposta_texto = msg_obj.get("text", "Olá! Como posso ajudar?") if isinstance(msg_obj, dict) else str(msg_obj)
+                    resposta_texto = msg_obj.get("text", "Olá!") if isinstance(msg_obj, dict) else str(msg_obj)
                     
                     print(f"⚙️ Preparando para enviar: {resposta_texto}")
 
-                    # ---------------------------------------------------------
-                    # 2. A BOCA DO ROBÔ: ENVIAR PARA A META (WHATSAPP REAL)
-                    # ---------------------------------------------------------
-                    access_token = "EAAL7kEUNnu0BQ9z1vZC2FEgsrcQDx5doZApm7WRm9ZCTOZCMEm5fyZBusx1r972lRGdoxCC3ieEsPUdCiuwQU4abhdve33pi1ZAAJephw4Rg5zi96Pm1EVZBi4yCJp2slypvP6KOtFbGgddeCnCLy9ZBMVzhpGzkxrwWTPLibgiApF3eMU7Jw7H5QvFnByKEsbBRlTqI7bJ6Ew58Sh0Cx0NCHnzxrqEoK4oc1Yh1hAGhZAUcqBugqnY5ekfT84vanMNtithseLvPzZBj4aAcVsZCVOctiyAjFnfywkZCNAZDZD"  # <-- ATENÇÃO AQUI
-                    phone_number_id = "956946084171393"  # <-- ATENÇÃO AQUI
-                    
-                    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+                    # USANDO AS VARIÁVEIS QUE VOCÊ JÁ TEM NO TOPO DO ARQUIVO
+                    # (Garanta que WA_PHONE_ID e WHATSAPP_TOKEN estejam certas lá em cima!)
+                    url = f"https://graph.facebook.com/v18.0/{WA_PHONE_ID}/messages"
                     headers = {
-                        "Authorization": f"Bearer {access_token}",
+                        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
                         "Content-Type": "application/json"
                     }
                     payload = {
@@ -714,28 +712,27 @@ async def whatsapp_webhook(request: Request):
                         "text": {"body": resposta_texto}
                     }
 
-                    # Dispara a mensagem!
+                    # Dispara a resposta
                     response = requests.post(url, json=payload, headers=headers)
+                    print(f"📡 Status da Resposta Meta: {response.status_code}")
 
-                    if response.status_code == 200:
-                        print("✅ Mensagem entregue com sucesso pela Meta!")
-                        
-                        # 3. SALVAR NO HISTÓRICO PARA APARECER NO SEU PAINEL REACT
+                    if response.status_code == 200 or response.status_code == 201:
+                        print("✅ Mensagem entregue com sucesso!")
+                        # Salva no histórico
                         cur.execute(
                             "INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
                             ('MASTER', sender_phone, 'outbound', resposta_texto)
                         )
                     else:
-                        print(f"❌ Erro ao enviar pela Meta: {response.text}")
+                        print(f"❌ Erro na Meta: {response.text}")
             
             conn.commit()
             cur.close()
             conn.close()
 
     except Exception as e:
-        print(f"❌ Erro fatal no webhook: {e}")
+        print(f"❌ Erro fatal no webhook: {str(e)}")
 
-    # A Meta exige que sempre retornemos 200 OK rapidamente
     return {"status": "ok"}
 
 # ==========================================
