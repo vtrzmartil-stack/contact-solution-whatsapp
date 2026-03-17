@@ -234,8 +234,8 @@ async def update_lead_status(lead_id: int, data: StatusUpdate):
 # 📱 MOTOR DE ENVIO (WHATSAPP CLOUD API)
 # ==========================================
 # Aqui vão as suas credenciais oficiais do painel da Meta:
-WHATSAPP_TOKEN = "SEU_TOKEN_PERMANENTE_AQUI"
-PHONE_NUMBER_ID = "SEU_ID_DO_NUMERO_AQUI"
+WHATSAPP_TOKEN = "EAAL7kEUNnu0BQZBC0kdftMl8tYiswk3WI2QpMnSA3cZBQEldnQavGVqpKKoBTurqv9yc40RD5k1Uqj6k4Ah4ZC9VNfZB3ARjO4I2vTrGEE3qcvATywEK9N9zgqBMnl5pWvSCkpZBRTQK57sETWaZA2O9knjz2uZAQsG8TGxMkirn8ic6P34fPXBdDNZAyg9ldEs1DVPhdjqM8Ymf5WnZBZC2M9QitdZBkP7k7QsOZAOJpMVhHouxTGFG8NcBEa7GJLhOjT8nTh5oN6SDTy0iBsIU9PH3lW98Yu1onZBruZAQZDZD"
+PHONE_NUMBER_ID = "956946084171393"
 
 def enviar_mensagem_wpp(numero_destino, texto_mensagem):
     # Usamos a versão 18.0 da API (pode ser 19.0 dependendo de quando você criou o app)
