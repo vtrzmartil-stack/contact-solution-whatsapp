@@ -302,7 +302,7 @@ def setup_database_tables():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Criando a tabela de Múltiplos Funis (se ela não existir)
+        # 1. Tabela de Funis (Que fizemos ontem)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS flows (
                 id TEXT PRIMARY KEY,
@@ -312,8 +312,36 @@ def setup_database_tables():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+
+        # 2. Tabela de Conversas (Memória do Bot: Onde o cliente parou?)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id SERIAL PRIMARY KEY,
+                company_id TEXT,
+                phone TEXT,
+                status_funil TEXT,
+                status TEXT DEFAULT 'open',
+                step TEXT,
+                nome TEXT,
+                email TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # 3. Tabela de Mensagens (Histórico do Chat para aparecer na tela)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                company_id TEXT,
+                phone TEXT,
+                direction TEXT,
+                text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
         conn.commit()
-        print("✅ [DB] Tabela 'flows' pronta para uso!")
+        print("✅ [DB] Todas as tabelas (Flows, Conversas e Mensagens) estão prontas!")
     except Exception as e:
         print(f"❌ [DB] Erro ao configurar tabelas: {e}")
     finally:
