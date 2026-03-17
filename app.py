@@ -38,6 +38,7 @@ DB_URL = "postgresql://postgres:17121983casamento@db.tmpjydwfzrhcrquwamgx.supaba
 # CONFIGURAÇÕES DO WHATSAPP (Substitua pelos seus dados)
 WA_TOKEN = "EAAL7kEUNnu0BQ91oGZBGsJ7XqJnTfa5oOtveqZBMjZCKMcPGOvKiZAhh6tlvO74OrHo5D7Lwfo15ZCkyvFzlKin1m7FhjuF8N0FSWaT6p4rViZBz403emicPVXlLAzKJ6ZBkeywra3YjpZCYYLFZCiFNAN2NEDBTpVyqZBg9UZA2P2T8oyrRAZCZApMC60xuwNCCfMQxwJNGQgID8RSxPtHZAFT2ZCa4jRgbDJsdQAfiNUiN4qoLZCIIkd5YRY9koJqowMy3WkPQrZAofa6tpAmZCdAxmvKDdQHE5ebo9ikaNJBzcZD"
 WA_PHONE_ID = "956946084171393"
+VERIFY_TOKEN = "viz1x2c3v4"
 
 import psycopg
 from psycopg.rows import dict_row
