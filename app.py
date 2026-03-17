@@ -45,6 +45,38 @@ def get_db_connection():
     # Usando o link direto do Supabase
     return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
 
+def get_db_connection():
+    return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+
+# Esta função vai criar as tabelas que estão faltando na imagem 049d22.png
+def setup_database_tables():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS flows (
+                id TEXT PRIMARY KEY,
+                company_id TEXT, 
+                name TEXT NOT NULL,
+                messages JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id SERIAL PRIMARY KEY,
+                phone TEXT UNIQUE,
+                step TEXT DEFAULT '0',
+                status_funil TEXT DEFAULT 'bot',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        print("✅ Tabelas criadas no Supabase com sucesso!")
+    finally:
+        cur.close()
+        conn.close()
+        
 # ---------------------------
 # Configurações e Logging
 # ---------------------------
