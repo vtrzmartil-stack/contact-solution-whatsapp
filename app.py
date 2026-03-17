@@ -616,7 +616,7 @@ async def api_send_message(request: Request):
     text = data.get("text")
 
     # Credenciais da Meta (Obrigado por mascarar!)
-    access_token = "EAAL7kEUNnu0BQ7E3oS0333DNnsgYofMwp84JSAKz7doHD7kkkR53GeuYVGfVrC7KAYfMHLaRNDq8HUNTlZBp1y3aoHzmdQULA7hcUsxWlcATZCtfXdMNCEmCePToIyf7IOktm9UBv0R5XxGECDQ95ZBDKlnfoMatLgz3TVzMtBaOLkd24q6dmSB8xu3HoAGVLzyHpmAgZAZCEymtAAu1toNPyVLZCGyZBr0ERlY3oAaTn29RQVZCFjwVge82d3kVFZBnug4Wt4GULytrKTwOTaYIOAReu1T4qViYun40ZD"
+    access_token = "EAAL7kEUNnu0BQ9z1vZC2FEgsrcQDx5doZApm7WRm9ZCTOZCMEm5fyZBusx1r972lRGdoxCC3ieEsPUdCiuwQU4abhdve33pi1ZAAJephw4Rg5zi96Pm1EVZBi4yCJp2slypvP6KOtFbGgddeCnCLy9ZBMVzhpGzkxrwWTPLibgiApF3eMU7Jw7H5QvFnByKEsbBRlTqI7bJ6Ew58Sh0Cx0NCHnzxrqEoK4oc1Yh1hAGhZAUcqBugqnY5ekfT84vanMNtithseLvPzZBj4aAcVsZCVOctiyAjFnfywkZCNAZDZD"
     phone_number_id = "956946084171393"
 
     if not access_token or not phone_number_id:
