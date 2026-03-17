@@ -656,6 +656,57 @@ async def api_send_message(request: Request):
         print(f"Erro ao disparar WhatsApp: {e}")
         return JSONResponse(status_code=500, content={"error": "Falha ao enviar"})    
     
+
+@app.post("/webhook")
+async def whatsapp_webhook(request: Request):
+    data = await request.json()
+    
+    try:
+        # 1. Verifica se é uma mensagem de texto chegando
+        entry = data.get("entry", [{}])[0]
+        changes = entry.get("changes", [{}])[0]
+        value = changes.get("value", {})
+        
+        if "messages" in value:
+            message = value["messages"][0]
+            sender_phone = message["from"]
+            text_received = message.get("text", {}).get("body", "").lower()
+            
+            print(f"📩 Mensagem de {sender_phone}: {text_received}")
+
+            # 2. BUSCAR O FUNIL NO SUPABASE (A mágica acontece aqui!)
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Buscamos o primeiro funil da empresa 'MASTER'
+            cur.execute("SELECT messages FROM flows WHERE company_id = 'MASTER' LIMIT 1")
+            row = cur.fetchone()
+            
+            if row:
+                funil_data = row[0] # Aqui estão as mensagens que você salvou!
+                # Vamos pegar a primeira mensagem do funil como resposta
+                if isinstance(funil_data, list) and len(funil_data) > 0:
+                    resposta_texto = funil_data[0].get("text", "Olá! Como posso ajudar?")
+                    
+                    # 3. ENVIAR A RESPOSTA (Usando a sua lógica da Meta)
+                    # (Aqui você usaria o mesmo requests.post que usamos na rota anterior)
+                    print(f"🤖 Robô respondendo: {resposta_texto}")
+                    
+                    # Opcional: Salvar no banco que o robô respondeu
+                    cur.execute(
+                        "INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
+                        ('MASTER', sender_phone, 'outbound', resposta_texto)
+                    )
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+
+    except Exception as e:
+        print(f"❌ Erro no processamento do robô: {e}")
+
+    return {"status": "ok"}
+
 # ==========================================
 # BUSCAR LISTA DE EMPRESAS (Painel Admin)
 # ==========================================
