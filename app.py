@@ -84,10 +84,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("contact-solution")
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
-DATABASE_URL = os.getenv("postgresql://postgres:17121983casamento@db.tmpjydwfzrhcrquwamgx.supabase.co:5432/postgres", "")
+
+# Agora o link está direto, sem o os.getenv atrapalhando!
+DATABASE_URL = "postgresql://postgres:17121983casamento@db.tmpjydwfzrhcrquwamgx.supabase.co:5432/postgres"
+
 def get_db_connection():
-    # Esta função abre a porta do banco de dados usando a URL do Render
+    # Esta função abre a porta do banco de dados usando a URL do Supabase
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
 app = FastAPI(title="Contact Solution OS - Full Engine")
 
 app.add_middleware(
