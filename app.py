@@ -32,9 +32,18 @@ from email.mime.multipart import MIMEMultipart
 import requests
 import json
 
+DB_URL = "postgresql://postgres:17121983casamento@db.tmpjydwfzrhcrquwamgx.supabase.co:5432/postgres"
+
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 # CONFIGURAÇÕES DO WHATSAPP (Substitua pelos seus dados)
 WA_TOKEN = "EAAL7kEUNnu0BQxBsXAzf2fZAx10X9t2YcB9cDJzR3F7VoSGAKoYTcpZCDPlzh73ViyZAfvQWxXPLQ4qjqPZAHhaLdCC2CMhyYKlW2ynvK4xIl6olTTcBpfXUjxOMbDtefJOiY8hdsmwgemXtk8I77vZBWvMEZBr4VdZBzacWYZBCeSMGTzyqyOpwoHTrlBAx9pUCiCbhll25LHGY3ekt1cKc1AhjpzACnniRJS3HSVB9z0clog1yXYDsSvv5vvHkiSYvuQZAGGl0ZCJaScj1EVHWiZAH1bn4zlZCGbyZA0QZDZD"
 WA_PHONE_ID = "956946084171393"
+
+def get_db_connection():
+    # Usando o link direto do Supabase
+    return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
 
 # ---------------------------
 # Configurações e Logging
