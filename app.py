@@ -347,54 +347,55 @@ def setup_database_tables():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # 1. Tabela de Funis (Que fizemos ontem)
+        # 1. Tabela de Empresas (A que está faltando no seu log!)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS companies (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                bot_whatsapp TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # 2. Criar a empresa MASTER automaticamente
+        cur.execute("""
+            INSERT INTO companies (id, name) 
+            VALUES ('MASTER', 'Minha Empresa Principal') 
+            ON CONFLICT (id) DO NOTHING;
+        """)
+
+        # 3. Tabela de Funis (Flows)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS flows (
                 id TEXT PRIMARY KEY,
-                company_id TEXT, 
+                company_id TEXT REFERENCES companies(id), 
                 name TEXT NOT NULL,
                 messages JSONB NOT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
 
-        # 2. Tabela de Conversas (Memória do Bot: Onde o cliente parou?)
+        # 4. Tabela de Conversas (Leads)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
                 id SERIAL PRIMARY KEY,
-                company_id TEXT,
-                phone TEXT,
-                status_funil TEXT,
-                status TEXT DEFAULT 'open',
-                step TEXT,
-                nome TEXT,
-                email TEXT,
+                company_id TEXT REFERENCES companies(id),
+                phone TEXT UNIQUE,
+                step TEXT DEFAULT '0',
+                status_funil TEXT DEFAULT 'bot',
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # 3. Tabela de Mensagens (Histórico do Chat para aparecer na tela)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id SERIAL PRIMARY KEY,
-                company_id TEXT,
-                phone TEXT,
-                direction TEXT,
-                text TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         
         conn.commit()
-        print("✅ [DB] Todas as tabelas (Flows, Conversas e Mensagens) estão prontas!")
+        print("✅ [FILTRO OK] Todas as tabelas e a empresa MASTER foram criadas!")
     except Exception as e:
-        print(f"❌ [DB] Erro ao configurar tabelas: {e}")
+        print(f"❌ Erro ao criar tabelas: {e}")
     finally:
         cur.close()
         conn.close()
-
-# 🚀 Executa a configuração ao iniciar o app.py
-setup_database_tables()
 
 # ==========================================
 # ROTA DE MENSAGENS BLINDADA E COM ACESSO ADMIN
