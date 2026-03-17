@@ -76,7 +76,7 @@ def setup_database_tables():
     finally:
         cur.close()
         conn.close()
-        
+
 # ---------------------------
 # Configurações e Logging
 # ---------------------------
@@ -84,7 +84,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("contact-solution")
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("postgresql://postgres:171219casamento@db.tmpjydwfzrhcrquwamgx.supabase.co:5432/postgres", "")
 def get_db_connection():
     # Esta função abre a porta do banco de dados usando a URL do Render
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
