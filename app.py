@@ -683,15 +683,28 @@ async def whatsapp_webhook(request: Request):
             row = cur.fetchone()
             
             if row:
-                # 1. ACESSO CORRIGIDO: Usamos o nome da coluna 'messages'
-                # Se row for um dicionário, usamos row['messages'], senão usamos row[0]
-                funil_data = row['messages'] if isinstance(row, dict) else row[0]
+                import json # Garanta que o 'import json' esteja no topo do seu arquivo!
                 
-                # 2. Verificar se o funil tem mensagens
+                # 1. Pegamos o dado bruto
+                raw_data = row['messages'] if isinstance(row, dict) else row[0]
+                
+                # 2. SE o dado veio como texto (String), transformamos em lista
+                if isinstance(raw_data, str):
+                    funil_data = json.loads(raw_data)
+                else:
+                    funil_data = raw_data
+                
+                # 3. Agora acessamos a mensagem com segurança
                 if isinstance(funil_data, list) and len(funil_data) > 0:
-                    # Pega o texto da primeira mensagem do funil
-                    resposta_texto = funil_data[0].get("text", "Olá! Como posso ajudar?")
+                    # Pegamos o texto da primeira mensagem
+                    msg_obj = funil_data[0]
                     
+                    # Verifica se é um dicionário ou se a mensagem está direta
+                    if isinstance(msg_obj, dict):
+                        resposta_texto = msg_obj.get("text", "Olá! Como posso ajudar?")
+                    else:
+                        resposta_texto = str(msg_obj)
+
                     print(f"🤖 Robô identificou o funil e vai responder: {resposta_texto}")
                     
                     # 3. Salvar no banco o envio (Histórico)
