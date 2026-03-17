@@ -683,16 +683,18 @@ async def whatsapp_webhook(request: Request):
             row = cur.fetchone()
             
             if row:
-                funil_data = row[0] # Aqui estão as mensagens que você salvou!
-                # Vamos pegar a primeira mensagem do funil como resposta
+                # 1. ACESSO CORRIGIDO: Usamos o nome da coluna 'messages'
+                # Se row for um dicionário, usamos row['messages'], senão usamos row[0]
+                funil_data = row['messages'] if isinstance(row, dict) else row[0]
+                
+                # 2. Verificar se o funil tem mensagens
                 if isinstance(funil_data, list) and len(funil_data) > 0:
+                    # Pega o texto da primeira mensagem do funil
                     resposta_texto = funil_data[0].get("text", "Olá! Como posso ajudar?")
                     
-                    # 3. ENVIAR A RESPOSTA (Usando a sua lógica da Meta)
-                    # (Aqui você usaria o mesmo requests.post que usamos na rota anterior)
-                    print(f"🤖 Robô respondendo: {resposta_texto}")
+                    print(f"🤖 Robô identificou o funil e vai responder: {resposta_texto}")
                     
-                    # Opcional: Salvar no banco que o robô respondeu
+                    # 3. Salvar no banco o envio (Histórico)
                     cur.execute(
                         "INSERT INTO messages (company_id, phone, direction, text) VALUES (%s, %s, %s, %s)",
                         ('MASTER', sender_phone, 'outbound', resposta_texto)
@@ -703,6 +705,7 @@ async def whatsapp_webhook(request: Request):
             conn.close()
 
     except Exception as e:
+        # Agora o erro não será mais '0'!
         print(f"❌ Erro no processamento do robô: {e}")
 
     return {"status": "ok"}
