@@ -659,6 +659,8 @@ async def api_send_message(request: Request):
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
+    dados_brutos = await request.json()
+    print("🚀 CHEGOU DA META:", dados_brutos)   
     data = await request.json()
     
     try:
